@@ -1,0 +1,106 @@
+package garden
+
+import (
+	"fmt"
+	"sort"
+	"strings"
+	"time"
+)
+
+func IsAddress(value string) bool   { return addressPattern.MatchString(value) }
+func (e Entry) InAddressBook() bool { return IsAddress(e.Value) && (e.AddressBook || e.Nickname != "") }
+func (s *Store) Recent(addressBook bool, query string) []Entry {
+	query = strings.ToLower(query)
+	out := []Entry{}
+	for _, e := range s.Entries {
+		if addressBook && !e.InAddressBook() {
+			continue
+		}
+		if query != "" && !strings.Contains(strings.ToLower(e.Value+" "+e.Nickname+" "+e.Note), query) {
+			continue
+		}
+		out = append(out, e)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].LastSeen.After(out[j].LastSeen) })
+	return out
+}
+func (s *Store) pruneRecent() {
+	count := 0
+	for _, e := range s.Entries {
+		if !e.AddressBook && e.Nickname == "" && e.Note == "" {
+			count++
+		}
+	}
+	for count > 1000 {
+		oldest := -1
+		for i, e := range s.Entries {
+			if e.AddressBook || e.Nickname != "" || e.Note != "" {
+				continue
+			}
+			if oldest < 0 || e.LastSeen.Before(s.Entries[oldest].LastSeen) {
+				oldest = i
+			}
+		}
+		if oldest < 0 {
+			break
+		}
+		s.Entries = append(s.Entries[:oldest], s.Entries[oldest+1:]...)
+		count--
+	}
+}
+func (s *Store) Touch(value string) {
+	for i := range s.Entries {
+		if s.Entries[i].Value == value {
+			s.Entries[i].LastSeen = time.Now()
+			return
+		}
+	}
+}
+func (s *Store) Delete(value string) {
+	for i, e := range s.Entries {
+		if e.Value == value {
+			s.Entries = append(s.Entries[:i], s.Entries[i+1:]...)
+			return
+		}
+	}
+}
+
+// Edit merges by value and keeps old metadata when a renamed entry collides with an existing value.
+func (s *Store) Edit(old string, entry Entry) error {
+	entry.Value = strings.TrimSpace(entry.Value)
+	entry.Nickname = strings.TrimSpace(entry.Nickname)
+	if entry.Value == "" {
+		return fmt.Errorf("값을 입력하세요")
+	}
+	if entry.AddressBook && (!IsAddress(entry.Value) || entry.Nickname == "") {
+		return fmt.Errorf("주소록에는 올바른 주소 형식과 별명이 필요합니다")
+	}
+	if entry.LastSeen.IsZero() {
+		entry.LastSeen = time.Now()
+	}
+	for _, e := range s.Entries {
+		if e.Value == entry.Value && e.Value != old {
+			if entry.Nickname == "" {
+				entry.Nickname = e.Nickname
+			}
+			if entry.Note == "" {
+				entry.Note = e.Note
+			}
+			entry.AddressBook = entry.AddressBook || e.AddressBook
+			if e.LastSeen.After(entry.LastSeen) {
+				entry.LastSeen = e.LastSeen
+			}
+		}
+	}
+	s.Delete(old)
+	s.Delete(entry.Value)
+	s.Entries = append(s.Entries, entry)
+	s.pruneRecent()
+	return nil
+}
+func (s *Store) CaptureInput(field Field, value string, path []string) {
+	if secretKey.MatchString(field.Name) || strings.Contains(strings.ToLower(field.Name), "seed") || Sensitive(path) {
+		return
+	}
+	s.Capture(value, path)
+}
