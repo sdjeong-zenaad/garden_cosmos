@@ -78,7 +78,13 @@ func (b *functionBar) labels() []string {
 			labels[2] = "복사"
 		}
 	}
-	if u.terminalClipboard {
+	if u.sshInputModes {
+		label := "터미널"
+		if u.terminalMode {
+			label = "앱모드"
+		}
+		labels[2], labels[3] = label, label
+	} else if u.terminalClipboard {
 		labels[2], labels[3] = "", ""
 	}
 	labels[0] = "CLI"

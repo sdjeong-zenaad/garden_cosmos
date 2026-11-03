@@ -18,6 +18,9 @@ import (
 type UI struct {
 	calculatorPage       tview.Primitive
 	terminalClipboard    bool
+	sshInputModes        bool
+	terminalMode         bool
+	modeOrigin           tview.Primitive
 	session              *garden.Session
 	displayOutput        string
 	pickerList           *tview.List
@@ -49,6 +52,7 @@ func Run(dir string, session *garden.Session, mouse bool) error {
 		return e
 	}
 	u.build()
+	u.sshInputModes = garden.SSHSession() && mouse
 	if garden.SSHSession() {
 		_, err := garden.DetectClipboard()
 		u.terminalClipboard = err != nil
@@ -60,6 +64,12 @@ func Run(dir string, session *garden.Session, mouse bool) error {
 }
 func (u *UI) installInput() {
 	u.app.SetInputCapture(func(e *tcell.EventKey) *tcell.EventKey {
+		u.syncInputMode()
+		defer u.syncInputMode()
+		if u.sshInputModes && (e.Key() == tcell.KeyF3 || e.Key() == tcell.KeyF4) {
+			u.setTerminalMode(!u.terminalMode)
+			return nil
+		}
 		if e.Key() == tcell.KeyF10 {
 			if err := u.rememberInputs(); err != nil {
 				u.alert(err.Error())

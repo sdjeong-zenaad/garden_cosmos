@@ -163,6 +163,10 @@ func (u *UI) contextMouse(event *tcell.EventMouse, action tview.MouseAction) (*t
 	if field := find(page); field != nil {
 		u.app.SetFocus(field)
 	}
+	if u.sshInputModes {
+		u.setTerminalMode(true)
+		return nil, action
+	}
 	u.clipboardMenu()
 	return nil, action
 }

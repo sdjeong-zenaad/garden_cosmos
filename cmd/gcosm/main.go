@@ -18,7 +18,7 @@ import (
 	"garden_cosmos/internal/ui"
 )
 
-var version = "0.7.7"
+var version = "0.8.0"
 
 func main() {
 	if e := run(); e != nil {
@@ -39,7 +39,7 @@ func run() error {
 	force := fs.Bool("refresh", false, "descriptor 강제 재분석")
 	doctor := fs.Bool("doctor", false, "선택 도구 설치 상태 확인")
 	ver := fs.Bool("version", false, "버전 출력")
-	mouse := fs.Bool("mouse", !garden.SSHSession(), "앱 마우스 사용 (SSH 기본: false, 터미널 선택·우클릭 사용)")
+	mouse := fs.Bool("mouse", true, "앱 마우스 사용 (SSH: 입력 편집·우클릭·F3/F4로 터미널 모드 전환)")
 	fs.Usage = func() {
 		fmt.Fprintln(fs.Output(), "사용법: gcosm [옵션]")
 		fmt.Fprintln(fs.Output(), "첫 실행: gcosm --cli /absolute/path/to/xplad")
