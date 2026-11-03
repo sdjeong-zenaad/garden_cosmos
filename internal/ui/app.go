@@ -16,6 +16,7 @@ import (
 )
 
 type UI struct {
+	calculatorPage       tview.Primitive
 	session              *garden.Session
 	displayOutput        string
 	pickerList           *tview.List
@@ -90,10 +91,15 @@ func (u *UI) installInput() {
 			return nil
 		}
 		if e.Key() == tcell.KeyF12 {
-			if name, _ := u.pages.GetFrontPage(); name == "clipboard" {
+			name, page := u.pages.GetFrontPage()
+			if name == "clipboard" {
 				return nil
 			}
-			u.calculator()
+			if page != nil && page == u.calculatorPage {
+				u.close()
+			} else {
+				u.calculator()
+			}
 			return nil
 		}
 		name, _ := u.pages.GetFrontPage()
@@ -229,6 +235,7 @@ func (u *UI) build() {
 }
 func (u *UI) message(s string) { u.status.SetText(tview.Escape(garden.Clean(s))) }
 func (u *UI) close() {
+	u.calculatorPage = nil
 	u.pages.RemovePage("dialog")
 	if u.editor != nil {
 		u.app.SetFocus(u.editor.form)
@@ -237,6 +244,7 @@ func (u *UI) close() {
 	}
 }
 func (u *UI) modal(p tview.Primitive, w, h int) {
+	u.calculatorPage = nil
 	_, _, sw, sh := u.pages.GetRect()
 	if sw > 0 && w > sw {
 		w = sw

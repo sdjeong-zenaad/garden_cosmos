@@ -188,7 +188,8 @@ func (u *UI) calculator() {
 		}
 		result.SetText("토큰을 저장했습니다. 다음에 계산기를 열면 목록에 반영됩니다.")
 	}).AddButton("닫기", u.close)
-	f.SetBorder(true).SetTitle(" F12 계산기 · + − * / ( ) · 과학적 표기 1e18 · Esc 닫기 ")
+	f.SetBorder(true).SetTitle(" F12 계산기 · + − * / ( ) · 과학적 표기 1e18 · F12/Esc 닫기 ")
 	layout := tview.NewFlex().SetDirection(tview.FlexRow).AddItem(f, 19, 0, true).AddItem(final, 3, 0, false).AddItem(result, 0, 1, false)
 	u.modal(layout, 96, 31)
+	_, u.calculatorPage = u.pages.GetFrontPage()
 }

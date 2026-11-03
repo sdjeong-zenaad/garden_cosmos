@@ -60,6 +60,9 @@ func (b *functionBar) labels() []string {
 			labels[1] = "전환"
 		}
 	}
+	if page != nil && page == u.calculatorPage {
+		labels[10] = "닫기"
+	}
 	// Draw runs under tview's application lock. Inspect primitives directly;
 	// never call Application.GetFocus (or any locking application API) here.
 	if focusedInput(page) != nil {

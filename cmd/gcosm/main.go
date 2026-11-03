@@ -18,7 +18,7 @@ import (
 	"garden_cosmos/internal/ui"
 )
 
-var version = "0.7.2"
+var version = "0.7.3"
 
 func main() {
 	if e := run(); e != nil {

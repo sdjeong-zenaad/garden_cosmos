@@ -2,6 +2,7 @@ package ui
 
 import (
 	"garden_cosmos/internal/garden"
+	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 	"os"
 	"path/filepath"
@@ -101,5 +102,38 @@ func TestCalculatorDefaultSkipsIBC(t *testing.T) {
 				t.Fatalf("denom = %q, want %q", got, wantDenom)
 			}
 		})
+	}
+}
+
+func TestCalculatorF12Toggle(t *testing.T) {
+	u := editorFixture(t)
+	u.installInput()
+	press := func() { u.app.GetInputCapture()(tcell.NewEventKey(tcell.KeyF12, 0, tcell.ModNone)) }
+	press()
+	f, final, _ := calculatorWidgets(u)
+	f.GetFormItem(4).(*tview.InputField).SetText("12 + 34")
+	pressButton(f, "계산")
+	want := final.GetText(false)
+	bar := &functionBar{ui: u}
+	if bar.labels()[10] != "닫기" {
+		t.Fatal("missing close hint")
+	}
+	press()
+	if name, _ := u.pages.GetFrontPage(); name != "command" {
+		t.Fatal("calculator did not close", name)
+	}
+	if !u.editor.form.HasFocus() {
+		t.Fatal("command form focus not restored")
+	}
+	press()
+	f, final, _ = calculatorWidgets(u)
+	if f.GetFormItem(4).(*tview.InputField).GetText() != "12 + 34" || final.GetText(false) != want {
+		t.Fatal("calculator state reset")
+	}
+	u.close()
+	u.settings()
+	press()
+	if _, page := u.pages.GetFrontPage(); page != u.calculatorPage || page == nil {
+		t.Fatal("F12 closed another dialog instead of opening calculator")
 	}
 }
