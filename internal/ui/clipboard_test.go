@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"garden_cosmos/internal/garden"
 	"os"
 	"path/filepath"
 	"testing"
@@ -148,4 +149,50 @@ func TestDirectClipboardShortcuts(t *testing.T) {
 	if name, _ := u.pages.GetFrontPage(); name != "command" {
 		t.Fatal("shortcut changed page")
 	}
+}
+
+func TestAddressRegistrationClipboardAfterMouseFocus(t *testing.T) {
+	file := mockClipboard(t)
+	u := editorFixture(t)
+	u.leaveCommand()
+	u.installInput()
+	u.editStoredEntry(garden.Entry{AddressBook: true}, true)
+	_, page := u.pages.GetFrontPage()
+	panel := page.(*tview.Flex).GetItem(1).(*tview.Flex).GetItem(1).(*tview.Flex)
+	form := panel.GetItem(0).(*tview.Form)
+	field := form.GetFormItem(0).(*tview.InputField)
+	screen := tcell.NewSimulationScreen("UTF-8")
+	screen.Init()
+	defer screen.Fini()
+	screen.SetSize(120, 40)
+	u.pages.SetRect(0, 0, 120, 40)
+	u.pages.Draw(screen)
+	address := "xpla1zapp6g36m0j7gcsmr2n8l6yhmgw3es2pcte3tz"
+	if err := os.WriteFile(file, []byte(address+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	x, y, _, _ := field.GetRect()
+	field.MouseHandler()(tview.MouseLeftDown, tcell.NewEventMouse(x+1, y, tcell.Button1, 0), func(p tview.Primitive) { u.app.SetFocus(p) })
+	u.app.GetInputCapture()(tcell.NewEventKey(tcell.KeyF4, 0, 0))
+	if field.GetText() != address {
+		t.Fatalf("mouse-focused address paste failed: %q focus=%T", field.GetText(), u.app.GetFocus())
+	}
+	// Copy uses the same mouse-focused field, and the context menu can paste too.
+	u.app.GetInputCapture()(tcell.NewEventKey(tcell.KeyF3, 0, 0))
+	copied, err := os.ReadFile(file)
+	if err != nil || string(copied) != address {
+		t.Fatal("mouse-focused copy failed", err)
+	}
+	field.SetText("")
+	u.clipboardMenu()
+	pressButton(clipboardForm(u), "입력 칸에 붙여넣기")
+	if field.GetText() != address {
+		t.Fatal("context paste failed")
+	}
+	field.SetText("")
+	u.pages.PasteHandler()(address, func(p tview.Primitive) { u.app.SetFocus(p) })
+	if field.GetText() != address {
+		t.Fatal("terminal paste failed")
+	}
+
 }

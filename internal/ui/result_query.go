@@ -128,7 +128,7 @@ func (u *UI) openResultQuery() {
 			u.app.SetFocus(order[(index+step+len(order))%len(order)])
 			return nil
 		case tcell.KeyF9:
-			apply()
+			u.close()
 			return nil
 		case tcell.KeyPgUp, tcell.KeyPgDn:
 			queryResultPane(page).InputHandler()(e, func(p tview.Primitive) { u.app.SetFocus(p) })

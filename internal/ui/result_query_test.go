@@ -138,7 +138,7 @@ func TestTextQueryExecutionAndRestore(t *testing.T) {
 			go u.app.QueueEvent(tcell.NewEventKey(tcell.KeyEnter, 0, 0))
 		} else if phase == 1 && !u.busy && result.GetText(true) == "ERROR failed\nWARN retry\n" {
 			phase = 2
-			go u.app.QueueEvent(tcell.NewEventKey(tcell.KeyEscape, 0, 0))
+			go u.app.QueueEvent(tcell.NewEventKey(tcell.KeyF9, 0, 0))
 		} else if phase == 2 {
 			if name, _ := u.pages.GetFrontPage(); name == "main" {
 				phase = 3

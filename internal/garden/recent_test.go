@@ -90,3 +90,85 @@ func TestAddressEditMergesAndClears(t *testing.T) {
 		t.Fatal("invalid address allowed")
 	}
 }
+
+func TestTypedSuggestionsAndPinnedHash(t *testing.T) {
+	a := "0x" + strings.Repeat("a", 40)
+	h := strings.Repeat("b", 64)
+	newer := "0x" + strings.Repeat("c", 40)
+	s := Store{}
+	s.Capture(a+" "+h+" "+newer, nil)
+	if err := s.Edit(h, Entry{Value: h, Kind: "hash", Nickname: "입금 거래", Note: "memo"}); err != nil {
+		t.Fatal(err)
+	}
+	got := s.Suggestions(Field{Name: "to_address"}, "")
+	if len(got) != 2 || got[0].Value != newer {
+		t.Fatal(got)
+	}
+	got = s.Suggestions(Field{Name: "txhash"}, "거래")
+	if len(got) != 1 || got[0].Value != h {
+		t.Fatal(got)
+	}
+	if len(s.Suggestions(Field{Name: "amount"}, "")) != 0 || len(s.Suggestions(Field{Name: "private-key"}, "b")) != 0 {
+		t.Fatal("unexpected suggestions")
+	}
+	for i := 0; i < 1005; i++ {
+		s.Put(fmt.Sprintf("%064x", i), "hash", "", "")
+	}
+	if len(s.Recent(false, "입금 거래")) != 1 {
+		t.Fatal("pinned hash evicted")
+	}
+	path := filepath.Join(t.TempDir(), "cache.json")
+	if err := Save(path, s); err != nil {
+		t.Fatal(err)
+	}
+	var restored Store
+	if err := Load(path, &restored); err != nil {
+		t.Fatal(err)
+	}
+	if len(restored.Suggestions(Field{Name: "tx_hash"}, "입금")) != 1 {
+		t.Fatal("pin lost on reload")
+	}
+}
+
+func TestKeysListCapturesOnlyPublicAddresses(t *testing.T) {
+	const first = "xpla1zapp6g36m0j7gcsmr2n8l6yhmgw3es2pcte3tz"
+	const second = "xpla1dt9m42z6gc0qsw4qzyx78guwmxxs4yzf5gc9v5"
+	output := `[
+ {"name":"conx-oper","type":"local","address":"` + first + `","pubkey":"{\"@type\":\"/cosmos.evm.crypto.v1.ethsecp256k1.PubKey\",\"key\":\"Am3d2DUt4tptQ97tMvPqcAca7LXUpbGsSWmEiHuFUqe1\"}"},
+ {"name":"zena-dev0","type":"local","address":"` + second + `","pubkey":"{\"@type\":\"/cosmos.evm.crypto.v1.ethsecp256k1.PubKey\",\"key\":\"A9n0mmX3ZYGE+KEL9/FkddpwQJKSmDBZ/EBXDtqy5STV\"}"}
+ ]`
+	s := Store{}
+	s.Capture(output, []string{"keys", "list"})
+	if len(s.Entries) != 2 || s.Entries[0].Value != first || s.Entries[1].Value != second {
+		t.Fatalf("public addresses missing: %+v", s.Entries)
+	}
+	s.Entries[0].Nickname = "운영"
+	s.Capture(output, []string{"keys", "list"})
+	if len(s.Entries) != 2 || s.Entries[0].Nickname != "운영" {
+		t.Fatal("lost alias or duplicated address")
+	}
+	// Strings resembling addresses or hashes outside address fields stay excluded.
+	s.Capture(fmt.Sprintf(`[{"address":"invalid","name":%q,"pubkey":%q,"private_key":%q}]`, "0x"+strings.Repeat("e", 40), strings.Repeat("f", 64), strings.Repeat("a", 64)), []string{"keys", "list"})
+	s.Capture("invalid JSON "+"0x"+strings.Repeat("b", 40), []string{"keys", "list"})
+	if len(s.Entries) != 2 {
+		t.Fatal("captured non-address key data")
+	}
+	for _, path := range [][]string{{"keys", "add"}, {"keys", "export"}, {"keys", "list", "extra"}} {
+		var excluded Store
+		excluded.Capture(output, path)
+		if len(excluded.Entries) != 0 {
+			t.Fatal("sensitive command cached", path)
+		}
+	}
+	path := filepath.Join(t.TempDir(), "bookmarks.json")
+	if err := Save(path, s); err != nil {
+		t.Fatal(err)
+	}
+	var restored Store
+	if err := Load(path, &restored); err != nil {
+		t.Fatal(err)
+	}
+	if len(restored.Suggestions(Field{Name: "to_address"}, "")) != 2 {
+		t.Fatal("addresses not available after reload")
+	}
+}

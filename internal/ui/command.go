@@ -13,17 +13,18 @@ import (
 )
 
 type commandEditor struct {
-	autocomplete map[*tview.InputField]func(string) []string
-	recorded     map[string]garden.FieldValue
-	activeKey    string
-	command      *garden.Command
-	fields       []garden.Field
-	values       map[string]garden.FieldValue
-	form         *tview.Form
-	feedback     *tview.TextView
-	active       *tview.InputField
-	preview      *tview.TextView
-	detail       *tview.TextView
+	pendingCompletion *tview.InputField
+	autocomplete      map[*tview.InputField]func(string) []string
+	recorded          map[string]garden.FieldValue
+	activeKey         string
+	command           *garden.Command
+	fields            []garden.Field
+	values            map[string]garden.FieldValue
+	form              *tview.Form
+	feedback          *tview.TextView
+	active            *tview.InputField
+	preview           *tview.TextView
+	detail            *tview.TextView
 }
 
 func (u *UI) preferenceKey() string { return u.descriptor.Binary + "\n" + u.descriptor.Home }
@@ -71,13 +72,13 @@ func (u *UI) commandForm() {
 			v.Value = u.descriptor.Home
 			v.Enabled = true
 		}
-		if f.Flag && garden.CommonFlag(f.Name) {
-			if saved, ok := prefs[u.preferenceKey()][f.Name]; ok {
-				v = saved
-			}
-		}
 		if draft, ok := u.drafts[u.preferenceKey()+"\n"+strings.Join(ed.command.Path, " ")][f.Key]; ok {
 			v = draft
+		}
+		if f.Flag && garden.CommonFlag(f.Name) {
+			if saved, ok := prefs[u.preferenceKey()][f.Name]; ok && garden.ValidateField(f, saved.Value) == nil {
+				v = saved
+			}
 		}
 		if f.Required {
 			v.Enabled = true
@@ -101,23 +102,16 @@ func (u *UI) commandForm() {
 		if len(f.Choices) > 0 {
 			options := append([]string{}, f.Choices...)
 			idx := 0
+			// Stale drafts must never extend this command's allowed choices.
+			if garden.ValidateField(f, v.Value) != nil {
+				v.Value = f.Default
+			}
 			for i, c := range options {
 				if c == v.Value {
 					idx = i
 				}
 			}
-			if v.Value != "" {
-				found := false
-				for _, c := range options {
-					if c == v.Value {
-						found = true
-					}
-				}
-				if !found {
-					options = append(options, v.Value)
-					idx = len(options) - 1
-				}
-			}
+
 			drop := tview.NewDropDown().SetLabel(label).SetOptions(options, func(s string, _ int) { setValue(s) }).SetCurrentOption(idx)
 			drop.SetDisabled(!v.Enabled)
 			drop.SetFocusFunc(showDetail)
@@ -142,12 +136,18 @@ func (u *UI) commandForm() {
 				})
 			}
 
+			styleAutocomplete(input)
+			var completionValues []string
 			ed.autocomplete[input] = func(s string) []string {
+				completionValues = nil
 				var out []string
-				for _, e := range u.store.Recent(false, "") {
-					if s != "" && (strings.Contains(e.Value, s) || strings.Contains(e.Nickname, s)) {
-						out = append(out, e.Value)
+				for _, e := range u.store.Suggestions(f, s) {
+					label := e.Value
+					if e.Nickname != "" {
+						label += " · " + strings.Join(strings.Fields(e.Nickname), " ")
 					}
+					out = append(out, label)
+					completionValues = append(completionValues, e.Value)
 				}
 				if f.Flag && (f.Name == "home" || strings.Contains(f.Name, "file") || strings.Contains(f.Name, "dir")) {
 					matches, _ := filepath.Glob(s + "*")
@@ -155,13 +155,44 @@ func (u *UI) commandForm() {
 						matches = matches[:30]
 					}
 					out = append(out, matches...)
+					completionValues = append(completionValues, matches...)
 				}
 				return out
 			}
 			input.SetAutocompleteFunc(ed.autocomplete[input])
+			completedByMouse := false
+			input.SetAutocompletedFunc(func(text string, index int, source int) bool {
+				if source == tview.AutocompletedNavigate {
+					return false
+				}
+				if index < 0 || index >= len(completionValues) {
+					return true
+				}
+				text = completionValues[index]
+				completedByMouse = source == tview.AutocompletedClick
+				input.SetText(text)
+				u.store.Touch(text)
+				if err := u.rememberInputs(); err != nil {
+					ed.feedback.SetText(tview.Escape(err.Error()))
+				}
+				if err := u.persistEntries(); err != nil {
+					ed.feedback.SetText(tview.Escape(err.Error()))
+				}
+				return true
+			})
+			input.SetBlurFunc(func() {
+				if err := u.rememberInputs(); err != nil {
+					ed.feedback.SetText(tview.Escape(err.Error()))
+				}
+			})
 			input.SetFocusFunc(func() {
 				showDetail()
 				ed.active = input
+				if completedByMouse {
+					completedByMouse = false
+					return
+				}
+				ed.pendingCompletion = input
 			})
 			item = input
 		}
@@ -356,10 +387,7 @@ func (u *UI) submitForm(interactive bool) {
 		ed.feedback.SetText("[red]" + tview.Escape(e.Error()))
 		return
 	}
-	if e = u.saveCommon(); e != nil {
-		ed.feedback.SetText("[red]" + tview.Escape(e.Error()))
-		return
-	}
+
 	if e := u.rememberInputs(); e != nil {
 		ed.feedback.SetText(tview.Escape(e.Error()))
 		return
@@ -376,8 +404,8 @@ type commandPage struct {
 func (p *commandPage) PasteHandler() func(string, func(tview.Primitive)) {
 	return func(text string, focus func(tview.Primitive)) {
 		u := p.ui
-		field, ok := u.app.GetFocus().(*tview.InputField)
-		if !ok || u.editor == nil {
+		field := focusedInput(p)
+		if field == nil || u.editor == nil {
 			return
 		}
 		text, err := garden.ClipboardFieldText(text)
@@ -398,25 +426,7 @@ func (u *UI) updateCommandPreview() {
 	if ed == nil || ed.preview == nil {
 		return
 	}
-	args := append([]string{}, ed.command.Path...)
-	var positional []string
-	for _, f := range ed.fields {
-		v := ed.values[f.Key]
-		if !v.Enabled && !f.Required {
-			continue
-		}
-		if f.Flag {
-			args = append(args, "--"+f.Name+"="+v.Value)
-		} else if f.Variadic {
-			positional = append(positional, strings.Fields(v.Value)...)
-		} else {
-			positional = append(positional, v.Value)
-		}
-	}
-	if len(positional) > 0 {
-		args = append(args, "--")
-		args = append(args, positional...)
-	}
+	args := garden.CommandArgs(ed.command, ed.fields, ed.values)
 	binary := u.descriptor.Binary
 	if found, err := exec.LookPath(filepath.Base(binary)); err == nil && found == binary {
 		binary = filepath.Base(binary)

@@ -52,7 +52,7 @@ func (u *UI) bookmarks() {
 func (u *UI) entryPicker(addressBook bool) {
 	search := tview.NewInputField().SetLabel("검색 (주소/해시/별명/메모) ")
 	list := tview.NewList().ShowSecondaryText(true)
-	title := " 최근 입력·출력 · 최신순 · Enter로 입력 "
+	title := " 캐시 전체 · 최신순 · Enter로 입력 "
 	if addressBook {
 		title = " 주소록 · 별명으로 검색 · Enter로 입력 "
 	}
@@ -101,6 +101,9 @@ func (u *UI) entryPicker(addressBook bool) {
 			if label == "" {
 				label = e.Kind
 			}
+			if e.Nickname != "" {
+				label = "고정 · " + label
+			}
 			list.AddItem(tview.Escape(label+" · "+e.Value), tview.Escape(e.LastSeen.Local().Format("2006-01-02 15:04:05")+" · "+e.Note), 0, nil)
 		}
 		if len(entries) == 0 {
@@ -114,7 +117,7 @@ func (u *UI) entryPicker(addressBook bool) {
 	for _, b := range []struct {
 		label string
 		fn    func()
-	}{{"최근", func() { u.entryPicker(false) }}, {"주소록", func() { u.entryPicker(true) }}, {"입력", insert}, {"복사", copySelected}, {"주소 등록", func() { u.editStoredEntry(garden.Entry{AddressBook: true}, addressBook) }}, {"별명/편집", func() {
+	}{{"최근", func() { u.entryPicker(false) }}, {"주소록", func() { u.entryPicker(true) }}, {"입력", insert}, {"복사", copySelected}, {"주소 등록", func() { u.editStoredEntry(garden.Entry{AddressBook: true}, addressBook) }}, {"별명/고정", func() {
 		if e, ok := selected(); ok {
 			u.editStoredEntry(e, addressBook)
 		}
@@ -172,7 +175,7 @@ func (u *UI) editStoredEntry(entry garden.Entry, backToBook bool) {
 	original := entry.Value
 	newAddress := original == "" && entry.AddressBook
 	f := tview.NewForm().AddInputField("주소 / 해시", entry.Value, 0, nil, nil).AddInputField("별명", entry.Nickname, 0, nil, nil).AddInputField("메모", entry.Note, 0, nil, nil)
-	status := tview.NewTextView().SetWrap(true).SetText("주소와 별명을 입력하면 주소록에 보관합니다. 별명을 지우면 최근 목록에만 남습니다. 개인키·시드는 저장하지 마세요.")
+	status := tview.NewTextView().SetWrap(true).SetText("별명을 붙이면 주소·해시가 고정되어 자동 정리에서 제외됩니다. 별명과 메모를 지우면 고정이 해제됩니다. 주소는 주소록에도 표시됩니다.")
 	f.AddButton("저장", func() {
 		entry.Value = strings.TrimSpace(f.GetFormItem(0).(*tview.InputField).GetText())
 		entry.Nickname = f.GetFormItem(1).(*tview.InputField).GetText()

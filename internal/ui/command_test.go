@@ -16,7 +16,7 @@ func editorFixture(t *testing.T) *UI {
 	t.Helper()
 	u := &UI{app: tview.NewApplication(), pages: tview.NewPages(), dir: t.TempDir()}
 	u.build()
-	u.selected = &garden.Command{Path: []string{"query", "block"}, Usage: "demo query block <height> [label] [flags]", Help: "block help", Flags: []garden.Flag{{Name: "chain-id", Type: "string"}, {Name: "output", Type: "string", Description: "format (text|json)"}, {Name: "trace", Type: "bool"}}}
+	u.selected = &garden.Command{Path: []string{"query", "block"}, Usage: "demo query block <height> [flags]", Help: "block help", Flags: []garden.Flag{{Name: "label", Type: "string"}, {Name: "chain-id", Type: "string"}, {Name: "output", Type: "string", Description: "format (text|json)"}, {Name: "trace", Type: "bool"}}}
 	u.descriptor = &garden.Descriptor{Binary: "/bin/echo", Home: "/tmp/chain-a", Root: u.selected}
 	u.commandForm()
 	return u
@@ -469,5 +469,141 @@ func TestCommandPageTabIncludesButtons(t *testing.T) {
 	root.InputHandler()(tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModNone), func(p tview.Primitive) { u.app.SetFocus(p) })
 	if u.app.GetFocus() != chain.check {
 		t.Fatal("disabled input still reachable")
+	}
+}
+
+func TestAllFlagsSharedAcrossCommands(t *testing.T) {
+	u := editorFixture(t)
+	u.leaveCommand()
+	flags := []garden.Flag{{Name: "limit", Type: "uint64"}, {Name: "reverse", Type: "bool"}, {Name: "password", Type: "string"}}
+	first := &garden.Command{Path: []string{"query", "first"}, Usage: "demo query first [flags]", Flags: flags}
+	second := &garden.Command{Path: []string{"query", "second"}, Usage: "demo query second [flags]", Flags: flags}
+	u.selected = second
+	u.commandForm()
+	u.leaveCommand() // An old disabled draft must not override the latest shared values.
+	u.selected = first
+	u.commandForm()
+	u.editor.values["flag:limit"] = garden.FieldValue{Enabled: true, Value: "0"}
+	u.editor.values["flag:reverse"] = garden.FieldValue{Enabled: true, Value: "false"}
+	u.editor.values["flag:password"] = garden.FieldValue{Enabled: true, Value: "not-persisted"}
+	if err := u.saveCommon(); err != nil {
+		t.Fatal(err)
+	}
+	u.leaveCommand()
+	u.selected = second
+	u.commandForm()
+	for key, want := range map[string]string{"flag:limit": "0", "flag:reverse": "false"} {
+		if got := u.editor.values[key]; !got.Enabled || got.Value != want {
+			t.Fatalf("%s: %+v", key, got)
+		}
+	}
+	if got := u.editor.values["flag:password"]; got.Enabled || got.Value != "" {
+		t.Fatal("secret shared", got)
+	}
+	u.leaveCommand()
+	u.drafts = nil
+	u.commandForm()
+	if !u.editor.values["flag:limit"].Enabled {
+		t.Fatal("persisted flag not restored without drafts")
+	}
+	u.editor.values["flag:limit"] = garden.FieldValue{Enabled: false, Value: "0"}
+	if err := u.saveCommon(); err != nil {
+		t.Fatal(err)
+	}
+	u.leaveCommand()
+	u.selected = first
+	u.commandForm()
+	if u.editor.values["flag:limit"].Enabled {
+		t.Fatal("unchecked flag re-enabled")
+	}
+}
+
+func TestPreviewDoesNotSaveFlags(t *testing.T) {
+	u := editorFixture(t)
+	u.editor.form.GetFormItem(0).(*tview.InputField).SetText("42")
+	u.editor.values["flag:chain-id"] = garden.FieldValue{Enabled: true, Value: "preview-only"}
+	u.submitForm(false)
+	if _, err := os.Stat(filepath.Join(u.dir, "common-flags.json")); !os.IsNotExist(err) {
+		t.Fatal("unconfirmed flags persisted", err)
+	}
+}
+
+func TestBlockTypeRequiredDropdown(t *testing.T) {
+	u := editorFixture(t)
+	u.leaveCommand()
+	u.selected = &garden.Command{Path: []string{"query", "block"}, Usage: "xplad query block --type=[height|hash] [height|hash] [flags]", Flags: []garden.Flag{{Name: "type", Type: "string", Default: "hash"}}}
+	u.commandForm()
+	if u.editor.form.GetFormItemCount() != 2 {
+		t.Fatal("duplicate positional input")
+	}
+	if _, ok := u.editor.form.GetFormItem(0).(*tview.InputField); !ok {
+		t.Fatal("missing positional input")
+	}
+	drop, ok := u.editor.form.GetFormItem(1).(*tview.DropDown)
+	if !ok || !strings.Contains(drop.GetLabel(), "*   --type") {
+		t.Fatal("required flag dropdown missing")
+	}
+	if _, text := drop.GetCurrentOption(); text != "hash" {
+		t.Fatal("flag default lost", text)
+	}
+	drop.SetCurrentOption(0)
+	if value := u.editor.values["flag:type"]; !value.Enabled || value.Value != "height" {
+		t.Fatal(value)
+	}
+}
+
+func TestSharedTypeMustMatchCommandChoices(t *testing.T) {
+	u := editorFixture(t)
+	u.leaveCommand()
+	block := &garden.Command{Path: []string{"query", "block"}, Usage: "demo query block --type=[height|hash] [value] [flags]", Flags: []garden.Flag{{Name: "type", Type: "string", Default: "hash"}}}
+	tx := &garden.Command{Path: []string{"query", "tx"}, Usage: "demo query tx --type=[hash|acc_seq|signature] [value] [flags]", Flags: []garden.Flag{{Name: "type", Type: "string", Default: "hash"}}}
+	open := func(c *garden.Command, want string) *tview.DropDown {
+		t.Helper()
+		u.selected = c
+		u.commandForm()
+		drop := u.editor.form.GetFormItem(1).(*tview.DropDown)
+		if _, got := drop.GetCurrentOption(); got != want {
+			t.Fatalf("%v: got %s want %s", c.Path, got, want)
+		}
+		if got := u.editor.values["flag:type"]; !got.Enabled || got.Value != want {
+			t.Fatal(got)
+		}
+		return drop
+	}
+	save := func() {
+		t.Helper()
+		if err := u.saveCommon(); err != nil {
+			t.Fatal(err)
+		}
+		u.leaveCommand()
+	}
+	open(tx, "hash").SetCurrentOption(1)
+	save() // acc_seq
+	d := open(block, "hash")
+	if d.GetOptionCount() != 2 {
+		t.Fatal("foreign choice added")
+	}
+	d.SetCurrentOption(0)
+	save()                  // height
+	d = open(tx, "acc_seq") // Valid per-command draft wins over incompatible shared height.
+	if d.GetOptionCount() != 3 {
+		t.Fatal("foreign choice added")
+	}
+	d.SetCurrentOption(2)
+	save() // signature
+	d = open(block, "height")
+	d.SetCurrentOption(1)
+	save() // hash is compatible with both commands.
+	open(tx, "hash")
+	u.leaveCommand()
+	// A cached choice removed by a CLI upgrade also falls back to its default.
+	u.drafts[u.preferenceKey()+"\nquery block"]["flag:type"] = garden.FieldValue{Enabled: true, Value: "removed"}
+	prefs := garden.Preferences{u.preferenceKey(): {"type": {Enabled: true, Value: "signature"}}}
+	if err := garden.Save(filepath.Join(u.dir, "common-flags.json"), prefs); err != nil {
+		t.Fatal(err)
+	}
+	d = open(block, "hash")
+	if d.GetOptionCount() != 2 {
+		t.Fatal("stale draft added a choice")
 	}
 }

@@ -261,6 +261,7 @@ func (u *UI) settings() {
 	form := tview.NewForm()
 	form.AddInputField("CLI 경로", u.profile.Binary, 54, nil, nil).AddInputField("체인 home (선택)", u.profile.Home, 54, nil, nil)
 	field := form.GetFormItem(0).(*tview.InputField)
+	styleAutocomplete(field)
 	field.SetAutocompleteFunc(func(s string) []string {
 		if s == "" {
 			return nil
@@ -357,6 +358,11 @@ func (u *UI) commands() []*garden.Command {
 	q := strings.ToLower(u.search.GetText())
 	var out []*garden.Command
 	for _, c := range garden.Flatten(u.descriptor.Root) {
+		// Keep command groups in the descriptor for traversal, but do not
+		// offer help-only parents as executable commands in the browser.
+		if len(c.Children) > 0 || strings.Contains(c.Usage, "[command]") {
+			continue
+		}
 		if strings.Contains(strings.ToLower(strings.Join(c.Path, " ")+" "+c.Summary), q) {
 			out = append(out, c)
 		}
@@ -411,6 +417,10 @@ func (u *UI) confirmArgs(interactive bool, args, path []string) {
 		_, hash, e := garden.Identity(binary)
 		if e != nil || hash != fingerprint {
 			u.alert("CLI 실행 파일이 바뀌었거나 읽을 수 없습니다. F5로 다시 분석하세요.")
+			return
+		}
+		if e := u.saveCommon(); e != nil {
+			u.alert(e.Error())
 			return
 		}
 		u.leaveCommand()

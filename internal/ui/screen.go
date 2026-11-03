@@ -17,8 +17,23 @@ func (u *UI) screenRoot() tview.Primitive {
 }
 func (s *appScreen) Draw(screen tcell.Screen) {
 	_, page := s.ui.pages.GetFrontPage()
+	// InputField's mouse handler holds its autocomplete mutex while it
+	// changes focus. Refresh only after that handler has returned, during draw.
+	if ed := s.ui.editor; ed != nil && ed.pendingCompletion != nil {
+		field := ed.pendingCompletion
+		ed.pendingCompletion = nil
+		if field.HasFocus() {
+			field.Autocomplete()
+		}
+	}
 	decorateButtons(page)
 	s.Flex.Draw(screen)
+	visitWidgets(page, func(p tview.Primitive) {
+		if drop, ok := p.(*tview.DropDown); ok && drop.HasFocus() && drop.IsOpen() {
+			drawComboOverlay(screen, drop)
+		}
+	})
+	s.bar.Draw(screen)
 }
 
 var functionKeys = []tcell.Key{tcell.KeyF1, tcell.KeyF2, tcell.KeyF3, tcell.KeyF4, tcell.KeyF5, tcell.KeyF6, tcell.KeyF7, tcell.KeyF8, tcell.KeyF9, tcell.KeyF10, tcell.KeyF12}
@@ -55,7 +70,7 @@ func (b *functionBar) labels() []string {
 		labels[2] = "복사"
 	}
 	if v := queryResultPane(page); v != nil {
-		labels[8] = "쿼리"
+		labels[8] = "돌아가기"
 		if v.HasFocus() {
 			labels[2] = "복사"
 		}
@@ -137,20 +152,37 @@ func (b *functionBar) MouseHandler() func(tview.MouseAction, *tcell.EventMouse, 
 	})
 }
 func decorateButtons(p tview.Primitive) {
+	visitWidgets(p, func(p tview.Primitive) {
+		switch v := p.(type) {
+		case *tview.Button:
+			styleButton(v)
+		case *tview.DropDown:
+			v.SetListStyles(comboNormal, comboSelected)
+		}
+	})
+}
+
+func visitWidgets(p tview.Primitive, visit func(tview.Primitive)) {
+	visit(p)
 	switch v := p.(type) {
 	case *actionModal:
-		decorateButtons(v.Flex)
+		visitWidgets(v.Flex, visit)
 	case *commandPage:
-		decorateButtons(v.Flex)
+		visitWidgets(v.Flex, visit)
+	case *fieldPane:
+		visitWidgets(v.Form, visit)
+	case *fieldRow:
+		visitWidgets(v.FormItem, visit)
 	case *tview.Flex:
 		for i := 0; i < v.GetItemCount(); i++ {
-			decorateButtons(v.GetItem(i))
+			visitWidgets(v.GetItem(i), visit)
 		}
 	case *tview.Form:
-		for i := 0; i < v.GetButtonCount(); i++ {
-			decorateButtons(v.GetButton(i))
+		for i := 0; i < v.GetFormItemCount(); i++ {
+			visitWidgets(v.GetFormItem(i), visit)
 		}
-	case *tview.Button:
-		styleButton(v)
+		for i := 0; i < v.GetButtonCount(); i++ {
+			visitWidgets(v.GetButton(i), visit)
+		}
 	}
 }

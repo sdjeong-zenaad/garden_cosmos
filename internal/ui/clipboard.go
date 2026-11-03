@@ -24,6 +24,10 @@ func (u *UI) clipboardMenu() {
 	}
 	origin := u.app.GetFocus()
 	field, _ := origin.(*tview.InputField)
+	if field == nil {
+		_, page := u.pages.GetFrontPage()
+		field = focusedInput(page)
+	}
 	if field == nil && name == "command" && u.editor != nil {
 		field = u.editor.active
 	}
@@ -166,6 +170,9 @@ func (u *UI) contextMouse(event *tcell.EventMouse, action tview.MouseAction) (*t
 func (u *UI) clipboardShortcut(key tcell.Key) {
 	field, _ := u.app.GetFocus().(*tview.InputField)
 	_, page := u.pages.GetFrontPage()
+	if field == nil {
+		field = focusedInput(page)
+	}
 	result := queryResultPane(page)
 	var err error
 	if key == tcell.KeyCtrlY {

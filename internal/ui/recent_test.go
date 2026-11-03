@@ -76,3 +76,92 @@ func TestAddressBookPickerFilter(t *testing.T) {
 		t.Fatal("search not applied")
 	}
 }
+
+func TestEmptyAddressCompletionAndBlurCapture(t *testing.T) {
+	u := editorFixture(t)
+	u.leaveCommand()
+	older := "0x" + strings.Repeat("a", 40)
+	newest := "0x" + strings.Repeat("b", 40)
+	hash := strings.Repeat("c", 64)
+	u.store.Capture(older+" "+hash+" "+newest, nil)
+	u.selected = &garden.Command{Usage: "demo [to_address] [txhash]", Path: []string{"query"}}
+	u.commandForm()
+	address := u.editor.form.GetFormItem(0).(*tview.InputField)
+	hashInput := u.editor.form.GetFormItem(1).(*tview.InputField)
+	u.app.SetFocus(address)
+	screen := tcell.NewSimulationScreen("UTF-8")
+	screen.Init()
+	defer screen.Fini()
+	screen.SetSize(120, 40)
+	root := u.screenRoot()
+	root.SetRect(0, 0, 120, 40)
+	root.Draw(screen)
+	got := u.editor.autocomplete[address]("")
+	if len(got) != 2 || got[0] != newest {
+		t.Fatal(got)
+	}
+	address.InputHandler()(tcell.NewEventKey(tcell.KeyEnter, 0, 0), func(p tview.Primitive) { u.app.SetFocus(p) })
+	if address.GetText() != newest {
+		t.Fatal("did not choose newest address", address.GetText())
+	}
+	fresh := strings.Repeat("d", 64)
+	u.app.SetFocus(hashInput)
+	hashInput.SetText(fresh)
+	u.app.SetFocus(address)
+	var saved garden.Store
+	if err := garden.Load(filepath.Join(u.dir, "bookmarks.json"), &saved); err != nil {
+		t.Fatal(err)
+	}
+	if saved.Recent(false, "")[0].Value != fresh {
+		t.Fatal("input not cached on blur")
+	}
+	got = u.editor.autocomplete[hashInput]("")
+	if len(got) != 2 || got[0] != fresh {
+		t.Fatal(got)
+	}
+}
+
+func TestCompletionAliasDisplayAndValueOnly(t *testing.T) {
+	u := editorFixture(t)
+	u.leaveCommand()
+	address := "xpla1zapp6g36m0j7gcsmr2n8l6yhmgw3es2pcte3tz"
+	hash := strings.Repeat("a", 64)
+	u.store.Put(address, "address", "운영 [red] 지갑", "")
+	u.store.Put(hash, "hash", "입금 거래", "")
+	u.selected = &garden.Command{Usage: "demo [address] [txhash]", Path: []string{"query"}}
+	u.commandForm()
+	screen := tcell.NewSimulationScreen("UTF-8")
+	screen.Init()
+	defer screen.Fini()
+	screen.SetSize(140, 40)
+	root := u.screenRoot()
+	root.SetRect(0, 0, 140, 40)
+	for i, tc := range []struct{ value, alias string }{{address, "운영 [red] 지갑"}, {hash, "입금 거래"}} {
+		input := u.editor.form.GetFormItem(i).(*tview.InputField)
+		u.app.SetFocus(input)
+		root.Draw(screen)
+		got := u.editor.autocomplete[input]("")
+		if len(got) != 1 || got[0] != tc.value+" · "+tc.alias {
+			t.Fatal(got)
+		}
+		_, y, _, _ := input.GetRect()
+		found := false
+		for x := 0; x < 140; x++ {
+			r, _, style, _ := screen.GetContent(x, y+1)
+			if r == rune(tc.value[0]) {
+				fg, bg, _ := style.Decompose()
+				if fg == tcell.NewHexColor(0x20262e) && bg == tcell.NewHexColor(0xe6edf3) {
+					found = true
+					break
+				}
+			}
+		}
+		if !found {
+			t.Fatal("light selected background/dark text not rendered")
+		}
+		input.InputHandler()(tcell.NewEventKey(tcell.KeyEnter, 0, 0), func(p tview.Primitive) { u.app.SetFocus(p) })
+		if input.GetText() != tc.value {
+			t.Fatal("alias leaked into input", input.GetText())
+		}
+	}
+}

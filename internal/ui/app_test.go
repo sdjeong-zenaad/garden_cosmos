@@ -60,6 +60,7 @@ func TestScreenAndCalculator(t *testing.T) {
 	box := outer.GetItem(1).(*tview.Flex)
 	layout := box.GetItem(1).(*tview.Flex)
 	form := layout.GetItem(0).(*tview.Form)
+	form.GetFormItem(0).(*tview.DropDown).SetCurrentOption(2)
 	form.GetFormItem(4).(*tview.InputField).SetText("1.000000000000000001")
 	form.GetFormItem(5).(*tview.DropDown).SetCurrentOption(1)
 	form.GetButton(0).InputHandler()(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone), func(tview.Primitive) {})
@@ -68,7 +69,7 @@ func TestScreenAndCalculator(t *testing.T) {
 		t.Fatal(result)
 	}
 	form.GetButton(1).InputHandler()(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone), func(tview.Primitive) {})
-	if input.GetText() != "1000000000000000001" {
+	if input.GetText() != "1000000000000000001axpla" {
 		t.Fatal(input.GetText())
 	}
 }
@@ -124,5 +125,32 @@ func TestSearchListKeyboardFocus(t *testing.T) {
 	u.list.InputHandler()(tcell.NewEventKey(tcell.KeyRune, 'x', tcell.ModAlt), focus)
 	if u.app.GetFocus() != u.list || u.search.GetText() != "가가" {
 		t.Fatal("modified shortcut became search text")
+	}
+}
+
+func TestCommandBrowserOmitsGroups(t *testing.T) {
+	send := &garden.Command{Path: []string{"tx", "bank", "send"}, Usage: "demo tx bank send [from] [to] [amount] [flags]"}
+	bank := &garden.Command{Path: []string{"tx", "bank"}, Usage: "demo tx bank [command]", Children: []*garden.Command{send}}
+	tx := &garden.Command{Path: []string{"tx"}, Usage: "demo tx [command]", Children: []*garden.Command{bank}}
+	block := &garden.Command{Path: []string{"query", "block"}, Usage: "demo query block [height]"}
+	query := &garden.Command{Path: []string{"query"}, Children: []*garden.Command{block}}
+	root := &garden.Command{Children: []*garden.Command{query, tx, {Path: []string{"empty-group"}, Usage: "demo empty-group [command]"}}}
+	u := &UI{app: tview.NewApplication(), pages: tview.NewPages()}
+	u.build()
+	u.descriptor = &garden.Descriptor{Root: root}
+	u.populate("")
+	if u.list.GetItemCount() != 2 || u.selected != block {
+		t.Fatal("groups still visible or selection wrong")
+	}
+	u.search.SetText("tx bank")
+	if u.list.GetItemCount() != 1 || u.selected != send {
+		t.Fatal("nested executable not searchable")
+	}
+	u.search.SetText("empty-group")
+	if u.list.GetItemCount() != 0 || u.selected != nil {
+		t.Fatal("help-only group still searchable")
+	}
+	if len(root.Children) != 3 || len(bank.Children) != 1 {
+		t.Fatal("descriptor modified")
 	}
 }

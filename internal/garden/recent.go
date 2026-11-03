@@ -2,10 +2,13 @@ package garden
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
 )
+
+var hashPattern = regexp.MustCompile(`^(?:0x)?[0-9a-fA-F]{64}$`)
 
 func IsAddress(value string) bool   { return addressPattern.MatchString(value) }
 func (e Entry) InAddressBook() bool { return IsAddress(e.Value) && (e.AddressBook || e.Nickname != "") }
@@ -103,4 +106,43 @@ func (s *Store) CaptureInput(field Field, value string, path []string) {
 		return
 	}
 	s.Capture(value, path)
+}
+
+// RecentKind identifies fields that benefit from an empty-input recent list.
+func RecentKind(f Field) string {
+	name := strings.ToLower(strings.ReplaceAll(f.Name, "_", "-"))
+	if secretKey.MatchString(name) || strings.Contains(name, "seed") {
+		return ""
+	}
+	if f.Type == "hash" || strings.Contains(name, "hash") || name == "txid" || name == "tx-id" {
+		return "hash"
+	}
+	if f.Type == "address" || strings.Contains(name, "address") || strings.Contains(name, "addr") {
+		return "address"
+	}
+	switch name {
+	case "from", "to", "sender", "recipient", "delegator", "validator", "contract":
+		return "address"
+	}
+	return ""
+}
+func (s *Store) Suggestions(f Field, query string) []Entry {
+	if secretKey.MatchString(f.Name) || strings.Contains(strings.ToLower(f.Name), "seed") {
+		return nil
+	}
+	kind := RecentKind(f)
+	if query == "" && kind == "" {
+		return nil
+	}
+	var out []Entry
+	for _, e := range s.Recent(false, query) {
+		if kind == "address" && !IsAddress(e.Value) {
+			continue
+		}
+		if kind == "hash" && (IsAddress(e.Value) || !hashPattern.MatchString(e.Value)) {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
 }

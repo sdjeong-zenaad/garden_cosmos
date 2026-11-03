@@ -5,16 +5,43 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"garden_cosmos/internal/garden"
 	"github.com/rivo/tview"
 )
+
+type calculatorState struct {
+	Token                              string
+	Symbol, Denom, Decimal, Expression string
+	Mode                               int
+	Result, Final                      string
+}
 
 func (u *UI) calculator() {
 	presets := []garden.Token{{Symbol: "ATOM", Denom: "uatom", Decimals: 6}, {Symbol: "XPLA", Denom: "axpla", Decimals: 18}}
 	if e := garden.Load(filepath.Join(u.dir, "tokens.json"), &presets); e != nil && !os.IsNotExist(e) {
 		u.alert(e.Error())
 		return
+	}
+	state := calculatorState{Decimal: "18", Expression: "0.1 + 0.2"}
+	statePath := filepath.Join(u.dir, "calculator.json")
+	err := garden.Load(statePath, &state)
+	if err != nil && !os.IsNotExist(err) {
+		u.alert(err.Error())
+		return
+	}
+	if os.IsNotExist(err) {
+		for _, p := range presets {
+			if strings.HasPrefix(strings.ToLower(strings.TrimSpace(p.Denom)), "ibc/") {
+				continue
+			}
+			state.Token, state.Symbol, state.Denom, state.Decimal = p.Denom, p.Symbol, p.Denom, strconv.Itoa(p.Decimals)
+			break
+		}
+	}
+	if state.Mode < 0 || state.Mode > 2 {
+		state.Mode = 0
 	}
 	f := tview.NewForm()
 	result := tview.NewTextView().SetDynamicColors(true).SetWrap(true)
@@ -34,7 +61,50 @@ func (u *UI) calculator() {
 			field(3).SetText(strconv.Itoa(p.Decimals))
 		}
 	})
+	tokenIndex := 0
+	for i, p := range presets {
+		if p.Denom == state.Token {
+			tokenIndex = i + 1
+			break
+		}
+	}
+	f.GetFormItem(0).(*tview.DropDown).SetCurrentOption(tokenIndex)
+	for i, value := range []string{state.Symbol, state.Denom, state.Decimal, state.Expression} {
+		field(i + 1).SetText(value)
+	}
+	f.GetFormItem(5).(*tview.DropDown).SetCurrentOption(state.Mode)
+	result.SetText(state.Result)
+	final := tview.NewTextView().SetWrap(true).SetText(state.Final)
+	final.SetBorder(true).SetTitle(" 최종 변환 결과 ")
+	save := func() {
+		i, _ := f.GetFormItem(0).(*tview.DropDown).GetCurrentOption()
+		state.Token = ""
+		if i > 0 {
+			state.Token = presets[i-1].Denom
+		}
+		state.Symbol, state.Denom, state.Decimal, state.Expression = field(1).GetText(), field(2).GetText(), field(3).GetText(), field(4).GetText()
+		state.Mode, _ = f.GetFormItem(5).(*tview.DropDown).GetCurrentOption()
+		state.Result, state.Final = result.GetText(false), final.GetText(false)
+		if err := garden.Save(statePath, state); err != nil {
+			u.status.SetText(tview.Escape(err.Error()))
+		}
+	}
+	for i := 1; i <= 4; i++ {
+		field(i).SetChangedFunc(func(string) { save() })
+	}
+	f.GetFormItem(5).(*tview.DropDown).SetSelectedFunc(func(string, int) { save() })
+	f.GetFormItem(0).(*tview.DropDown).SetSelectedFunc(func(_ string, i int) {
+		if i > 0 {
+			p := presets[i-1]
+			field(1).SetText(p.Symbol)
+			field(2).SetText(p.Denom)
+			field(3).SetText(strconv.Itoa(p.Decimals))
+		}
+		save()
+	})
 	calculate := func() string {
+		defer save()
+		final.SetText("")
 		v, e := garden.Calculate(field(4).GetText())
 		if e != nil {
 			result.SetText("[red]" + tview.Escape(e.Error()))
@@ -61,10 +131,17 @@ func (u *UI) calculator() {
 			}
 		}
 		result.SetText(tview.Escape(text))
-		if v.IsInt() {
-			return v.Num().String()
-		}
 		formatted := garden.FormatRat(v)
+		if v.IsInt() {
+			formatted = v.Num().String()
+		}
+		switch idx {
+		case 1:
+			formatted += field(2).GetText()
+		case 2:
+			formatted += " " + field(1).GetText()
+		}
+		final.SetText(formatted)
 		for _, c := range formatted {
 			if c == '/' {
 				return ""
@@ -80,7 +157,15 @@ func (u *UI) calculator() {
 				result.SetText("명령 입력 폼에서 사용할 입력 칸을 활성화하고 선택한 뒤 계산기를 여세요.")
 			}
 		}
+	}).AddButton("결과 복사", func() {
+		if value := final.GetText(false); value != "" {
+			if err := u.copyClipboard(value); err != nil {
+				result.SetText(tview.Escape(err.Error()))
+				save()
+			}
+		}
 	}).AddButton("토큰 저장", func() {
+		defer save()
 		d, e := strconv.Atoi(field(3).GetText())
 		if e != nil || d < 0 || d > 36 || field(1).GetText() == "" || field(2).GetText() == "" {
 			result.SetText("심볼, denom, decimal(0..36)을 확인하세요.")
@@ -104,6 +189,6 @@ func (u *UI) calculator() {
 		result.SetText("토큰을 저장했습니다. 다음에 계산기를 열면 목록에 반영됩니다.")
 	}).AddButton("닫기", u.close)
 	f.SetBorder(true).SetTitle(" F12 계산기 · + − * / ( ) · 과학적 표기 1e18 · Esc 닫기 ")
-	layout := tview.NewFlex().SetDirection(tview.FlexRow).AddItem(f, 19, 0, true).AddItem(result, 0, 1, false)
-	u.modal(layout, 96, 28)
+	layout := tview.NewFlex().SetDirection(tview.FlexRow).AddItem(f, 19, 0, true).AddItem(final, 3, 0, false).AddItem(result, 0, 1, false)
+	u.modal(layout, 96, 31)
 }

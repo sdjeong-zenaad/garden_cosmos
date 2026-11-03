@@ -5,6 +5,7 @@ import (
 	"math"
 	"net/url"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -24,15 +25,35 @@ type Preferences map[string]map[string]FieldValue
 var placeholders = regexp.MustCompile(`<([^>]+)>|\[([^\[\]]+)\]`)
 var alternatives = regexp.MustCompile(`\(([a-zA-Z0-9_-]+(?:\|[a-zA-Z0-9_-]+)+)\)`)
 
+// Parse flag-owned placeholders before collecting positional placeholders.
+var usageFlagValue = regexp.MustCompile(`(\[)?--([a-zA-Z0-9][a-zA-Z0-9_-]*)(?:=|[ \t]+)(\[[^\[\]]+\]|<[^>]+>)`)
+var usageChoices = regexp.MustCompile(`^[a-zA-Z0-9_-]+(?:\|[a-zA-Z0-9_-]+)+$`)
+
 func Fields(c *Command) []Field {
+	type usageFlag struct {
+		required bool
+		choices  []string
+	}
+	explicit := map[string]usageFlag{}
+	usage := usageFlagValue.ReplaceAllStringFunc(c.Usage, func(token string) string {
+		m := usageFlagValue.FindStringSubmatch(token)
+		value := m[3][1 : len(m[3])-1]
+		info := usageFlag{required: m[1] == ""}
+		if usageChoices.MatchString(value) {
+			info.choices = strings.Split(value, "|")
+		}
+		explicit[m[2]] = info
+		return ""
+	})
+
 	var fields []Field
-	for _, m := range placeholders.FindAllStringSubmatch(c.Usage, -1) {
+	for _, m := range placeholders.FindAllStringSubmatch(usage, -1) {
 		name := m[1]
-		required := name != ""
+		required := true
 		if name == "" {
 			name = m[2]
 		}
-		if name == "flags" || name == "command" {
+		if name == "flags" || name == "command" || strings.HasPrefix(name, "--") {
 			continue
 		}
 		variadic := strings.HasSuffix(name, "...")
@@ -40,8 +61,9 @@ func Fields(c *Command) []Field {
 		if name == "" {
 			continue
 		}
-		fields = append(fields, Field{Key: fmt.Sprintf("arg:%d", len(fields)), Name: name, Type: argumentType(name), Required: required, Variadic: variadic, Description: "위치 인자 · " + name + " · 필수 여부 불명확 시 선택으로 처리"})
+		fields = append(fields, Field{Key: fmt.Sprintf("arg:%d", len(fields)), Name: name, Type: argumentType(name), Required: required, Variadic: variadic, Description: "위치 인자 · " + name + " · 필수"})
 	}
+	flagStart := len(fields)
 	for _, f := range c.Flags {
 		if f.Name == "help" {
 			continue
@@ -51,6 +73,12 @@ func Fields(c *Command) []Field {
 		if m := alternatives.FindStringSubmatch(f.Description); m != nil {
 			field.Choices = strings.Split(m[1], "|")
 		}
+		if info, ok := explicit[f.Name]; ok {
+			field.Required = field.Required || info.required
+			if len(info.choices) > 0 {
+				field.Choices = info.choices
+			}
+		}
 		if f.Type == "bool" {
 			field.Choices = []string{"true", "false"}
 			if field.Default == "" {
@@ -59,6 +87,10 @@ func Fields(c *Command) []Field {
 		}
 		fields = append(fields, field)
 	}
+	flags := fields[flagStart:]
+	sort.SliceStable(flags, func(i, j int) bool {
+		return flags[i].Required && !flags[j].Required
+	})
 	return fields
 }
 func argumentType(name string) string {
@@ -74,12 +106,10 @@ func argumentType(name string) string {
 		return "string"
 	}
 }
+
+// Remember flags across commands, except values containing credentials.
 func CommonFlag(name string) bool {
-	switch name {
-	case "chain-id", "node", "home", "from", "keyring-backend", "keyring-dir", "output", "gas", "gas-prices", "gas-adjustment", "fees", "broadcast-mode":
-		return true
-	}
-	return false
+	return !secretKey.MatchString(name) && !strings.Contains(strings.ToLower(name), "seed")
 }
 
 var addressPattern = regexp.MustCompile(`^(?:0x[0-9a-fA-F]{40}|[a-z][a-z0-9]{1,82}1[023456789acdefghjklmnpqrstuvwxyz]{6,100})$`)
@@ -161,10 +191,8 @@ func ValidateField(f Field, value string) error {
 	return nil
 }
 
-// Argv has no shell interpolation. Flags precede -- so positional values cannot become flags.
+// Validate enabled form values before building argv without shell interpolation.
 func FormArgs(c *Command, fields []Field, values map[string]FieldValue) ([]string, error) {
-	args := append([]string{}, c.Path...)
-	var positional []string
 	gap := false
 	for _, f := range fields {
 		v := values[f.Key]
@@ -189,15 +217,74 @@ func FormArgs(c *Command, fields []Field, values map[string]FieldValue) ([]strin
 				return nil, fmt.Errorf("%s: %w", f.Name, e)
 			}
 		}
-		if f.Flag {
-			args = append(args, "--"+f.Name+"="+v.Value)
-		} else {
-			positional = append(positional, vs...)
+	}
+	return CommandArgs(c, fields, values), nil
+}
+
+// CommandArgs also builds incomplete previews, keeping the order from Usage.
+func CommandArgs(c *Command, fields []Field, values map[string]FieldValue) []string {
+	positions := map[string]int{}
+	usage := []byte(c.Usage)
+	for _, loc := range usageFlagValue.FindAllStringSubmatchIndex(c.Usage, -1) {
+		positions["flag:"+c.Usage[loc[4]:loc[5]]] = loc[0]
+		for i := loc[0]; i < loc[1]; i++ {
+			usage[i] = ' '
 		}
 	}
-	if len(positional) > 0 {
+	flagPosition := len(usage)
+	argIndex := 0
+	for _, loc := range placeholders.FindAllStringSubmatchIndex(string(usage), -1) {
+		name := string(usage[loc[0]+1 : loc[1]-1])
+		if name == "flags" {
+			flagPosition = loc[0]
+			continue
+		}
+		if name == "command" || strings.HasPrefix(name, "--") || name == "" {
+			continue
+		}
+		positions[fmt.Sprintf("arg:%d", argIndex)] = loc[0]
+		argIndex++
+	}
+	ordered := append([]Field(nil), fields...)
+	position := func(f Field) int {
+		if p, ok := positions[f.Key]; ok {
+			return p
+		}
+		return flagPosition
+	}
+	sort.SliceStable(ordered, func(i, j int) bool { return position(ordered[i]) < position(ordered[j]) })
+	args := append([]string{}, c.Path...)
+	var flags, positional []string
+	needsSeparator := false
+	for _, f := range ordered {
+		v := values[f.Key]
+		if !v.Enabled && !f.Required {
+			continue
+		}
+		if f.Flag {
+			value := "--" + f.Name + "=" + v.Value
+			args = append(args, value)
+			flags = append(flags, value)
+			continue
+		}
+		vs := []string{v.Value}
+		if f.Variadic {
+			vs = strings.Fields(v.Value)
+		}
+		for _, value := range vs {
+			if strings.HasPrefix(value, "-") {
+				needsSeparator = true
+			}
+		}
+		args = append(args, vs...)
+		positional = append(positional, vs...)
+	}
+	// Quoting does not stop pflag interpreting a dash-prefixed value as a
+	// flag. Only these exceptional values require flags before the separator.
+	if needsSeparator {
+		args = append(append([]string{}, c.Path...), flags...)
 		args = append(args, "--")
 		args = append(args, positional...)
 	}
-	return args, nil
+	return args
 }
