@@ -78,6 +78,9 @@ func (b *functionBar) labels() []string {
 			labels[2] = "복사"
 		}
 	}
+	if u.terminalClipboard {
+		labels[2], labels[3] = "", ""
+	}
 	labels[0] = "CLI"
 	labels[9] = "종료"
 	return labels

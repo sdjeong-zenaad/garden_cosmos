@@ -17,6 +17,7 @@ import (
 
 type UI struct {
 	calculatorPage       tview.Primitive
+	terminalClipboard    bool
 	session              *garden.Session
 	displayOutput        string
 	pickerList           *tview.List
@@ -39,7 +40,7 @@ type UI struct {
 	cancel               context.CancelFunc
 }
 
-func Run(dir string, session *garden.Session) error {
+func Run(dir string, session *garden.Session, mouse bool) error {
 	u := &UI{app: tview.NewApplication(), pages: tview.NewPages(), dir: dir, session: session}
 	if e := garden.Load(filepath.Join(dir, "profile.json"), &u.profile); e != nil && !os.IsNotExist(e) {
 		return e
@@ -48,7 +49,11 @@ func Run(dir string, session *garden.Session) error {
 		return e
 	}
 	u.build()
-	u.app.SetRoot(u.screenRoot(), true).EnableMouse(true).EnablePaste(true)
+	if garden.SSHSession() {
+		_, err := garden.DetectClipboard()
+		u.terminalClipboard = err != nil
+	}
+	u.app.SetRoot(u.screenRoot(), true).EnableMouse(mouse).EnablePaste(true)
 	u.installInput()
 	u.installStartup()
 	return u.app.Run()

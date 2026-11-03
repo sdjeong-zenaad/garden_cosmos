@@ -607,3 +607,38 @@ func TestSharedTypeMustMatchCommandChoices(t *testing.T) {
 		t.Fatal("stale draft added a choice")
 	}
 }
+
+func TestHomeDefaultSelection(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		explicit, saved bool
+		want            bool
+	}{
+		{"inferred", false, false, false}, {"explicit", true, false, true}, {"saved", false, true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			u := editorFixture(t)
+			u.selected.Flags = append(u.selected.Flags, garden.Flag{Name: "home", Type: "string", Default: "/tmp/default"})
+			if tc.explicit {
+				u.profile.Home = u.descriptor.Home
+			}
+			if tc.saved {
+				prefs := garden.Preferences{u.preferenceKey(): {"home": {Enabled: true, Value: "/tmp/saved"}}}
+				if err := garden.Save(filepath.Join(u.dir, "common-flags.json"), prefs); err != nil {
+					t.Fatal(err)
+				}
+			}
+			u.commandForm()
+			got := u.editor.values["flag:home"]
+			if got.Enabled != tc.want {
+				t.Fatalf("home=%+v", got)
+			}
+			if !tc.want && strings.Contains(u.editor.preview.GetText(false), "--home=") {
+				t.Fatal("optional home in preview")
+			}
+			if got.Value == "" {
+				t.Fatal("home default lost")
+			}
+		})
+	}
+}

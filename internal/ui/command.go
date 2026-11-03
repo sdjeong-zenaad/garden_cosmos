@@ -70,7 +70,7 @@ func (u *UI) commandForm() {
 		v := garden.FieldValue{Enabled: f.Required, Value: f.Default}
 		if f.Flag && f.Name == "home" && u.descriptor.Home != "" {
 			v.Value = u.descriptor.Home
-			v.Enabled = true
+			v.Enabled = f.Required || u.profile.Home != ""
 		}
 		if draft, ok := u.drafts[u.preferenceKey()+"\n"+strings.Join(ed.command.Path, " ")][f.Key]; ok {
 			v = draft

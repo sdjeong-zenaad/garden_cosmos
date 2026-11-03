@@ -46,6 +46,9 @@ func detectClipboard(env func(string) string, find func(string) (string, error))
 	if env("DISPLAY") != "" {
 		return Clipboard{}, fmt.Errorf("X11 클립보드 도구가 없습니다: sudo apt install xclip")
 	}
+	if SSHSession() {
+		return Clipboard{}, fmt.Errorf("SSH에서는 터미널의 텍스트 선택·우클릭 메뉴로 복사·붙여넣기하세요. 앱 마우스가 켜져 있으면 --mouse=false로 실행하세요")
+	}
 	return Clipboard{}, fmt.Errorf("데스크톱 세션을 찾지 못했습니다. 터미널의 복사·붙여넣기를 사용하세요")
 }
 func (c Clipboard) Write(ctx context.Context, text string) error {

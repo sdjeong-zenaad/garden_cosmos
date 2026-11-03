@@ -196,3 +196,20 @@ func TestAddressRegistrationClipboardAfterMouseFocus(t *testing.T) {
 	}
 
 }
+
+func TestTerminalClipboardFooterAndPaste(t *testing.T) {
+	u := editorFixture(t)
+	u.terminalClipboard = true
+	field := u.editor.form.GetFormItem(0).(*tview.InputField)
+	u.app.SetFocus(field)
+	bar := &functionBar{ui: u}
+	labels := bar.labels()
+	if labels[2] != "" || labels[3] != "" {
+		t.Fatal("unavailable clipboard advertised", labels)
+	}
+	_, page := u.pages.GetFrontPage()
+	page.PasteHandler()("123", func(p tview.Primitive) { u.app.SetFocus(p) })
+	if field.GetText() != "123" {
+		t.Fatal("terminal paste lost", field.GetText())
+	}
+}
