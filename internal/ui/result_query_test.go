@@ -124,7 +124,7 @@ func TestTextQueryExecutionAndRestore(t *testing.T) {
 		t.Fatal("text query did not open")
 	}
 	q := page.(*tview.Flex).GetItem(1).(*tview.InputField)
-	if q.GetLabel() != "grep -E > " {
+	if q.GetLabel() != "rg > " {
 		t.Fatal("wrong query mode")
 	}
 	q.SetText("ERROR|WARN")
@@ -159,5 +159,17 @@ func TestTextQueryExecutionAndRestore(t *testing.T) {
 	}
 	if phase != 3 || u.output.GetText(false) != previous || u.displayOutput != copyText {
 		t.Fatal("text query changed original output")
+	}
+}
+
+func TestTextQueryMissingRipgrep(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	u := editorFixture(t)
+	u.raw = "plain text"
+	u.resultQuery()
+	_, page := u.pages.GetFrontPage()
+	modal := page.(*tview.Flex).GetItem(1).(*tview.Flex).GetItem(1).(*actionModal)
+	if text := modal.text.GetText(true); !strings.Contains(text, "rg가 없습니다") || !strings.Contains(text, "sudo apt install ripgrep") {
+		t.Fatal(text)
 	}
 }

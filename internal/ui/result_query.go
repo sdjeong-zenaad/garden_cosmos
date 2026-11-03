@@ -52,7 +52,7 @@ func (v *queryView) MouseHandler() func(tview.MouseAction, *tcell.EventMouse, fu
 func (u *UI) openResultQuery() {
 	raw := u.querySource()
 	isJSON := json.Valid([]byte(raw))
-	title, label, initial := " 원본 텍스트 · 결과쿼리 ", "grep -E > ", ""
+	title, label, initial := " 원본 텍스트 · 결과쿼리 ", "rg > ", ""
 	filterOutput := garden.FilterText
 	if isJSON {
 		title, label, initial = " 원본 JSON · 결과쿼리 ", "jq > ", "."

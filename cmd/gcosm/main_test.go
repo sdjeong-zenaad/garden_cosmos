@@ -59,3 +59,25 @@ func TestNoArgsWithoutCLIShowsHelp(t *testing.T) {
 		})
 	}
 }
+
+func TestDoctorMissingRipgrep(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	old := os.Stdout
+	defer func() { os.Stdout = old }()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	os.Stdout = w
+	Doctor()
+	w.Close()
+	data, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := string(data)
+	if !strings.Contains(out, "rg: 미설치 (선택 도구)") || !strings.Contains(out, "sudo apt install jq bat ripgrep util-linux") {
+		t.Fatal(out)
+	}
+}

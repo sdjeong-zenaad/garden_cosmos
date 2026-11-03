@@ -2,6 +2,8 @@ package garden
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -31,5 +33,17 @@ func TestFilterText(t *testing.T) {
 	cancel()
 	if _, err := FilterText(ctx, "hello", "."); err == nil {
 		t.Fatal("cancellation ignored")
+	}
+}
+
+func TestFilterTextIgnoresRipgrepConfig(t *testing.T) {
+	config := filepath.Join(t.TempDir(), "ripgreprc")
+	if err := os.WriteFile(config, []byte("--count\n--ignore-case\n--glob=*.never\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RIPGREP_CONFIG_PATH", config)
+	out, err := FilterText(context.Background(), "ERROR failed\nerror lower\n", "ERROR")
+	if err != nil || out != "ERROR failed\n" {
+		t.Fatalf("unexpected configuration influence: %q %v", out, err)
 	}
 }

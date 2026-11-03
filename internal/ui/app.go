@@ -556,12 +556,12 @@ func (u *UI) resultQuery() {
 	if u.busy {
 		return
 	}
-	tool := "grep"
+	tool, pkg := "rg", "ripgrep"
 	if json.Valid([]byte(u.querySource())) {
-		tool = "jq"
+		tool, pkg = "jq", "jq"
 	}
 	if _, e := exec.LookPath(tool); e != nil {
-		u.alert(fmt.Sprintf("%s가 없습니다. 터미널에서 sudo apt install %s 실행 후 다시 시도하세요.", tool, tool))
+		u.alert(fmt.Sprintf("%s가 없습니다. 터미널에서 sudo apt install %s 실행 후 다시 시도하세요.", tool, pkg))
 		return
 	}
 	u.openResultQuery()

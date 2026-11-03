@@ -18,7 +18,7 @@ import (
 	"garden_cosmos/internal/ui"
 )
 
-var version = "0.7.3"
+var version = "0.7.5"
 
 func main() {
 	if e := run(); e != nil {
@@ -130,12 +130,14 @@ func run() error {
 }
 func Doctor() {
 	var missing []string
-	for _, name := range []string{"jq", "batcat", "script"} {
+	for _, name := range []string{"jq", "batcat", "rg", "script"} {
 		p, e := exec.LookPath(name)
 		if e != nil {
 			fmt.Println(name + ": 미설치 (선택 도구)")
 			if name == "batcat" {
 				missing = append(missing, "bat")
+			} else if name == "rg" {
+				missing = append(missing, "ripgrep")
 			} else if name == "script" {
 				missing = append(missing, "util-linux")
 			} else {
