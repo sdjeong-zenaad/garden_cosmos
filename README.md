@@ -10,12 +10,12 @@ CLI 도움말과 TOML 설정을 분석해 명령 입력 폼을 제공하며, 결
 Go 1.23 이상, `make`, 실행할 Cosmos CLI가 필요합니다. Ubuntu 기준이며 권장 터미널 크기는 120×40 이상입니다.
 
 ```sh
-make install                 # ~/.local/bin/gcosm에 설치
+make install                 # ~/go/bin/gcosm에 설치
 make                         # 설치 없이 bin/gcosm 빌드
 make install PREFIX=/경로     # /경로/bin/gcosm에 설치
 ```
 
-`~/.local/bin`이 PATH에 없다면 셸 설정에 `export PATH="$HOME/.local/bin:$PATH"`를 추가하세요.
+`~/go/bin`이 PATH에 없다면 셸 설정에 `export PATH="$HOME/go/bin:$PATH"`를 추가하세요.
 로고는 실행 파일에 내장되어 별도 파일이 필요 없습니다.
 
 Go 실행 파일이나 툴체인 버전을 지정할 수 있습니다.

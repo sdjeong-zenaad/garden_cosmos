@@ -3,7 +3,7 @@
 # GO selects the launcher. GOTOOLCHAIN (environment or make command line)
 # selects its toolchain; when omitted, Go's own saved/default setting applies.
 GO ?= go
-PREFIX ?= $(HOME)/.local
+PREFIX ?= $(HOME)/go
 BINDIR ?= $(PREFIX)/bin
 DESTDIR ?=
 TESTFLAGS ?= -timeout 30s
@@ -38,7 +38,7 @@ vet: toolchain
 help:
 	@printf '%s\n' \
 	  'make                         Build bin/gcosm' \
-	  'make install                 Install to ~/.local/bin/gcosm' \
+	  'make install                 Install to ~/go/bin/gcosm' \
 	  'make install PREFIX=/path    Install to /path/bin/gcosm' \
 	  'make GO=/path/to/go          Select a Go executable' \
 	  'make GOTOOLCHAIN=go1.x.y      Select an exact Go toolchain' \
