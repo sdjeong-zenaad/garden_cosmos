@@ -642,3 +642,34 @@ func TestHomeDefaultSelection(t *testing.T) {
 		})
 	}
 }
+
+func TestCommandListClickOpensClickedCommand(t *testing.T) {
+	for _, query := range []string{"", "query"} {
+		t.Run("filter="+query, func(t *testing.T) {
+			u := editorFixture(t)
+			u.leaveCommand()
+			block := &garden.Command{Path: []string{"query", "block"}, Usage: "demo query block [height]"}
+			tx := &garden.Command{Path: []string{"query", "tx"}, Usage: "demo query tx [hash]"}
+			u.descriptor.Root = &garden.Command{Children: []*garden.Command{
+				{Path: []string{"version"}, Usage: "demo version [flags]"}, block, tx,
+			}}
+			u.search.SetText(query)
+			u.populate(query)
+			u.list.SetRect(0, 0, 50, 10)
+			focus := func(p tview.Primitive) { u.app.SetFocus(p) }
+			// Select a different row, then click forwards, backwards, and the same row.
+			for _, index := range []int{u.list.GetItemCount() - 1, 0, 0} {
+				want := u.commands()[index]
+				x, y, _, _ := u.list.GetInnerRect()
+				u.list.MouseHandler()(tview.MouseLeftClick, tcell.NewEventMouse(x, y+index, tcell.Button1, tcell.ModNone), focus)
+				if u.editor == nil || u.editor.command != want || u.selected != want {
+					t.Fatalf("click row %d did not open %v", index, want.Path)
+				}
+				if u.list.GetCurrentItem() != index {
+					t.Fatal("list selection disagrees with opened command")
+				}
+				u.leaveCommand()
+			}
+		})
+	}
+}

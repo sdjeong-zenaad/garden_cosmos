@@ -223,7 +223,11 @@ func (u *UI) build() {
 		return e
 	})
 	u.list.SetChangedFunc(func(i int, main, secondary string, r rune) { u.selectIndex(i) })
-	u.list.SetSelectedFunc(func(int, string, string, rune) { u.commandForm() })
+	u.list.SetSelectedFunc(func(i int, _, _ string, _ rune) {
+		// Mouse activation precedes the list's changed callback.
+		u.selectIndex(i)
+		u.commandForm()
+	})
 	left := tview.NewFlex().SetDirection(tview.FlexRow).AddItem(u.search, 1, 0, true).AddItem(u.list, 0, 1, false)
 	right := tview.NewFlex().SetDirection(tview.FlexRow).AddItem(u.help, 0, 1, false).AddItem(u.output, 0, 2, false)
 	body := tview.NewFlex().AddItem(left, 0, 1, true).AddItem(right, 0, 2, false)
