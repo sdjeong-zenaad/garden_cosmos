@@ -23,7 +23,13 @@ func (s *modeTestScreen) DisableMouse()                   { s.mouse = false }
 func modeFixture(t *testing.T, remote bool) (*UI, *appScreen, *modeTestScreen, *tview.InputField, *tview.InputField) {
 	t.Helper()
 	u := editorFixture(t)
-	u.sshInputModes = remote
+	if remote {
+		t.Setenv("SSH_CONNECTION", "remote")
+	} else {
+		for _, key := range []string{"SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY"} {
+			t.Setenv(key, "")
+		}
+	}
 	s := &modeTestScreen{SimulationScreen: tcell.NewSimulationScreen("UTF-8")}
 	if err := s.Init(); err != nil {
 		t.Fatal(err)
@@ -49,75 +55,37 @@ func modeKey(u *UI, root *appScreen, key tcell.Key, r rune) {
 	}
 }
 
-func TestSSHInputModeTransitions(t *testing.T) {
-	u, root, s, first, second := modeFixture(t, true)
-	check := func(terminal bool) {
-		t.Helper()
-		if u.terminalMode != terminal || s.mouse == terminal {
-			t.Fatalf("terminal=%v mouse=%v want terminal=%v", u.terminalMode, s.mouse, terminal)
-		}
-	}
-	check(false)
-	modeKey(u, root, tcell.KeyRune, 'x') // rejected integer
-	check(false)
-	modeKey(u, root, tcell.KeyBackspace2, 0) // no deletion
-	check(false)
-	first.SetText("1") // restored/programmatic text
-	root.Draw(s)
-	check(false)
-	modeKey(u, root, tcell.KeyRune, '2')
-	check(true)
-	if root.bar.labels()[2] != "앱모드" {
-		t.Fatal("missing terminal mode hint")
-	}
-	modeKey(u, root, tcell.KeyF3, 0)
-	check(false)
-	modeKey(u, root, tcell.KeyDelete, 0) // cursor at end; no change
-	check(false)
-	modeKey(u, root, tcell.KeyBackspace2, 0)
-	check(true)
-	modeKey(u, root, tcell.KeyTab, 0)
-	check(false)
-	if !second.HasFocus() {
-		t.Fatal("Tab did not leave input")
-	}
-	root.PasteHandler()("pasted", func(p tview.Primitive) { u.app.SetFocus(p) })
-	check(true)
-	modeKey(u, root, tcell.KeyF4, 0)
-	check(false)
-	second.SetAutocompleteFunc(func(string) []string { return []string{"choice"} })
-	modeKey(u, root, tcell.KeyEnter, 0)
-	check(false)
-	if second.GetText() != "choice" {
-		t.Fatal("completion not selected")
-	}
-	root.Draw(s)
-	x, y, _, _ := second.GetRect()
-	event, _ := u.contextMouse(tcell.NewEventMouse(x+1, y, tcell.ButtonSecondary, 0), tview.MouseRightDown)
-	if event != nil {
-		t.Fatal("right click not consumed")
-	}
-	check(true)
-	modeKey(u, root, tcell.KeyF3, 0)
-	check(false)
-	modeKey(u, root, tcell.KeyF4, 0)
-	check(true)
-	modeKey(u, root, tcell.KeyF1, 0) // global handler opens another dialog
-	check(false)
-}
-
-func TestLocalInputKeepsMouseAndClipboard(t *testing.T) {
-	mockClipboard(t)
-	u, root, s, first, _ := modeFixture(t, false)
-	modeKey(u, root, tcell.KeyRune, '7')
-	modeKey(u, root, tcell.KeyF3, 0)
-	if u.terminalMode || !s.mouse {
-		t.Fatal("local mode changed")
-	}
-	first.SetText("")
-	modeKey(u, root, tcell.KeyF4, 0)
-	if first.GetText() != "7" {
-		t.Fatal("local clipboard shortcut changed", first.GetText())
+func TestFixedMouseControls(t *testing.T) {
+	for _, remote := range []bool{false, true} {
+		t.Run(map[bool]string{false: "local", true: "SSH"}[remote], func(t *testing.T) {
+			u, root, s, first, _ := modeFixture(t, remote)
+			check := func(terminal bool) {
+				t.Helper()
+				if u.terminalMode != terminal || s.mouse == terminal {
+					t.Fatalf("terminal=%v mouse=%v", u.terminalMode, s.mouse)
+				}
+			}
+			modeKey(u, root, tcell.KeyF4, 0)
+			check(true)
+			modeKey(u, root, tcell.KeyF4, 0)
+			check(true)
+			modeKey(u, root, tcell.KeyRune, '2')
+			check(true)
+			modeKey(u, root, tcell.KeyTab, 0)
+			check(true)
+			modeKey(u, root, tcell.KeyF3, 0)
+			check(false)
+			modeKey(u, root, tcell.KeyF3, 0)
+			check(false)
+			modeKey(u, root, tcell.KeyRune, 'x')
+			check(false)
+			if first.GetText() != "2" {
+				t.Fatal("typing lost")
+			}
+			if root.bar.labels()[2] != "마우스 사용" || root.bar.labels()[3] != "마우스 해제" {
+				t.Fatal("wrong labels")
+			}
+		})
 	}
 }
 
@@ -128,6 +96,7 @@ func TestSSHModeEventLoopDoesNotDeadlock(t *testing.T) {
 		tcell.NewEventKey(tcell.KeyF3, 0, 0),
 		tcell.NewEventKey(tcell.KeyF4, 0, 0),
 		tcell.NewEventKey(tcell.KeyTab, 0, 0),
+		tcell.NewEventKey(tcell.KeyF3, 0, 0),
 		tcell.NewEventKey(tcell.KeyCtrlC, 0, 0),
 	} {
 		u.app.QueueEvent(e)

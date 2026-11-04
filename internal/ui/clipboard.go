@@ -18,6 +18,9 @@ func (u *UI) copyClipboard(value string) error {
 	return c.Write(context.Background(), value)
 }
 func (u *UI) clipboardMenu() {
+	if !u.hasClipboard() {
+		return
+	}
 	name, _ := u.pages.GetFrontPage()
 	if name == "clipboard" {
 		return
@@ -163,15 +166,11 @@ func (u *UI) contextMouse(event *tcell.EventMouse, action tview.MouseAction) (*t
 	if field := find(page); field != nil {
 		u.app.SetFocus(field)
 	}
-	if u.sshInputModes {
-		u.setTerminalMode(true)
-		return nil, action
-	}
 	u.clipboardMenu()
 	return nil, action
 }
 
-func (u *UI) clipboardShortcut(key tcell.Key) {
+func (u *UI) clipboardAction(key tcell.Key) {
 	field, _ := u.app.GetFocus().(*tview.InputField)
 	_, page := u.pages.GetFrontPage()
 	if field == nil {
@@ -228,4 +227,39 @@ func (u *UI) clipboardShortcut(key tcell.Key) {
 			u.alert(err.Error())
 		}
 	}
+}
+
+// Detection only checks tool/session availability; it does not read the clipboard.
+func (u *UI) hasClipboard() bool {
+	_, err := garden.DetectClipboard()
+	return err == nil
+}
+
+// Restore the target before invoking a button action: clicking a tview button
+// moves focus to the button, while copy/paste must operate on the previous field.
+func (u *UI) clipboardButtons() tview.Primitive {
+	row := tview.NewFlex()
+	for _, spec := range []struct {
+		label string
+		key   tcell.Key
+	}{{"복사", tcell.KeyCtrlY}, {"붙여넣기", tcell.KeyCtrlV}} {
+		key := spec.key
+		var origin tview.Primitive
+		button := tview.NewButton(spec.label)
+		button.SetMouseCapture(func(a tview.MouseAction, e *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
+			if a == tview.MouseLeftDown {
+				origin = u.modeFocus()
+			}
+			return a, e
+		})
+		button.SetSelectedFunc(func() {
+			if origin != nil {
+				u.app.SetFocus(origin)
+			}
+			u.clipboardAction(key)
+		})
+		styleButton(button)
+		row.AddItem(button, 14, 0, false).AddItem(nil, 1, 0, false)
+	}
+	return row
 }

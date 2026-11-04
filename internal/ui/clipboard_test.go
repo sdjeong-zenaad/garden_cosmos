@@ -4,6 +4,7 @@ import (
 	"garden_cosmos/internal/garden"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gdamore/tcell/v2"
@@ -129,20 +130,20 @@ func TestRightClickInputClipboard(t *testing.T) {
 	}
 }
 
-func TestDirectClipboardShortcuts(t *testing.T) {
+func TestClipboardButtons(t *testing.T) {
 	file := mockClipboard(t)
 	u := editorFixture(t)
 	u.installInput()
 	field := u.editor.form.GetFormItem(0).(*tview.InputField)
 	field.SetText("42")
 	u.app.SetFocus(field)
-	u.app.GetInputCapture()(tcell.NewEventKey(tcell.KeyF3, 0, tcell.ModNone))
+	clickClipboardButton(u, 0)
 	b, err := os.ReadFile(file)
 	if err != nil || string(b) != "42" {
 		t.Fatal(string(b), err)
 	}
 	field.SetText("")
-	u.app.GetInputCapture()(tcell.NewEventKey(tcell.KeyF4, 0, tcell.ModNone))
+	clickClipboardButton(u, 1)
 	if field.GetText() != "42" || u.editor.values["arg:0"].Value != "42" {
 		t.Fatal("shortcut paste failed")
 	}
@@ -173,12 +174,12 @@ func TestAddressRegistrationClipboardAfterMouseFocus(t *testing.T) {
 	}
 	x, y, _, _ := field.GetRect()
 	field.MouseHandler()(tview.MouseLeftDown, tcell.NewEventMouse(x+1, y, tcell.Button1, 0), func(p tview.Primitive) { u.app.SetFocus(p) })
-	u.app.GetInputCapture()(tcell.NewEventKey(tcell.KeyF4, 0, 0))
+	clickClipboardButton(u, 1)
 	if field.GetText() != address {
 		t.Fatalf("mouse-focused address paste failed: %q focus=%T", field.GetText(), u.app.GetFocus())
 	}
 	// Copy uses the same mouse-focused field, and the context menu can paste too.
-	u.app.GetInputCapture()(tcell.NewEventKey(tcell.KeyF3, 0, 0))
+	clickClipboardButton(u, 0)
 	copied, err := os.ReadFile(file)
 	if err != nil || string(copied) != address {
 		t.Fatal("mouse-focused copy failed", err)
@@ -199,17 +200,66 @@ func TestAddressRegistrationClipboardAfterMouseFocus(t *testing.T) {
 
 func TestTerminalClipboardFooterAndPaste(t *testing.T) {
 	u := editorFixture(t)
-	u.terminalClipboard = true
+	t.Setenv("PATH", t.TempDir())
 	field := u.editor.form.GetFormItem(0).(*tview.InputField)
 	u.app.SetFocus(field)
 	bar := &functionBar{ui: u}
 	labels := bar.labels()
-	if labels[2] != "" || labels[3] != "" {
+	if labels[2] != "마우스 사용" || labels[3] != "마우스 해제" {
 		t.Fatal("unavailable clipboard advertised", labels)
 	}
 	_, page := u.pages.GetFrontPage()
 	page.PasteHandler()("123", func(p tview.Primitive) { u.app.SetFocus(p) })
 	if field.GetText() != "123" {
 		t.Fatal("terminal paste lost", field.GetText())
+	}
+}
+
+func clickClipboardButton(u *UI, index int) {
+	row := u.clipboardButtons().(*tview.Flex)
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		panic(err)
+	}
+	defer screen.Fini()
+	screen.SetSize(60, 1)
+	row.SetRect(0, 0, 60, 1)
+	row.Draw(screen)
+	button := row.GetItem(index * 2).(*tview.Button)
+	x, y, _, _ := button.GetRect()
+	event := tcell.NewEventMouse(x+1, y, tcell.Button1, 0)
+	focus := func(p tview.Primitive) { u.app.SetFocus(p) }
+	row.MouseHandler()(tview.MouseLeftDown, event, focus)
+	row.MouseHandler()(tview.MouseLeftClick, event, focus)
+}
+
+func TestNoClipboardButtonsWithoutTools(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	u := editorFixture(t)
+	if u.hasClipboard() {
+		t.Fatal("clipboard unexpectedly available")
+	}
+	root := u.screenRoot().(*appScreen)
+	if root.GetItemCount() != 2 {
+		t.Fatal("clipboard toolbar visible")
+	}
+	check := func() {
+		t.Helper()
+		_, page := u.pages.GetFrontPage()
+		visitWidgets(page, func(p tview.Primitive) {
+			if b, ok := p.(*tview.Button); ok && (strings.Contains(b.GetLabel(), "복사") || strings.Contains(b.GetLabel(), "붙여넣기")) {
+				t.Fatal("clipboard button visible", b.GetLabel())
+			}
+		})
+	}
+	check()
+	u.calculator()
+	check()
+	u.bookmarks()
+	check()
+	_, before := u.pages.GetFrontPage()
+	u.clipboardMenu()
+	if _, after := u.pages.GetFrontPage(); before != after {
+		t.Fatal("unsupported clipboard menu opened")
 	}
 }

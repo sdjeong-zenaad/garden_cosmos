@@ -58,13 +58,6 @@ func (u *UI) commandForm() {
 			ed.feedback.SetText("명령줄 복사 완료")
 		}
 	}
-	ed.preview.SetMouseCapture(func(a tview.MouseAction, e *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
-		if a == tview.MouseLeftClick {
-			copyCommand()
-			return a, nil
-		}
-		return a, e
-	})
 	for index, field := range ed.fields {
 		f := field
 		v := garden.FieldValue{Enabled: f.Required, Value: f.Default}
@@ -258,7 +251,11 @@ func (u *UI) commandForm() {
 	usage := tview.NewTextView().SetText("사용법: " + ed.command.Usage)
 	copyButton := tview.NewButton("[복사]").SetSelectedFunc(copyCommand)
 	copyColumn := tview.NewFlex().SetDirection(tview.FlexRow).AddItem(copyButton, 1, 0, true).AddItem(nil, 0, 1, false)
-	previewRow := tview.NewFlex().AddItem(copyColumn, 8, 0, false).AddItem(nil, 1, 0, false).AddItem(ed.preview, 0, 1, false)
+	previewRow := tview.NewFlex()
+	if u.hasClipboard() {
+		previewRow.AddItem(copyColumn, 8, 0, false).AddItem(nil, 1, 0, false)
+	}
+	previewRow.AddItem(ed.preview, 0, 1, false)
 	pane := &fieldPane{Form: ed.form, focus: func(i int) { ed.form.SetFocus(i); u.app.SetFocus(ed.form) }}
 	page := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(usage, 2, 0, false).
@@ -273,7 +270,10 @@ func (u *UI) commandForm() {
 		case tcell.KeyTab, tcell.KeyBacktab:
 			// One page-wide cycle includes buttons outside tview.Form. Rebuild it
 			// after each checkbox change so disabled inputs are never focused.
-			order := []tview.Primitive{copyButton}
+			order := []tview.Primitive{}
+			if u.hasClipboard() {
+				order = append(order, copyButton)
+			}
 			for i := 0; i < ed.form.GetFormItemCount(); i++ {
 				item := ed.form.GetFormItem(i)
 				if row, ok := item.(*fieldRow); ok {

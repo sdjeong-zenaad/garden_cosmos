@@ -17,10 +17,7 @@ import (
 
 type UI struct {
 	calculatorPage       tview.Primitive
-	terminalClipboard    bool
-	sshInputModes        bool
 	terminalMode         bool
-	modeOrigin           tview.Primitive
 	session              *garden.Session
 	displayOutput        string
 	pickerList           *tview.List
@@ -52,11 +49,7 @@ func Run(dir string, session *garden.Session, mouse bool) error {
 		return e
 	}
 	u.build()
-	u.sshInputModes = garden.SSHSession() && mouse
-	if garden.SSHSession() {
-		_, err := garden.DetectClipboard()
-		u.terminalClipboard = err != nil
-	}
+	u.terminalMode = !mouse
 	u.app.SetRoot(u.screenRoot(), true).EnableMouse(mouse).EnablePaste(true)
 	u.installInput()
 	u.installStartup()
@@ -64,10 +57,8 @@ func Run(dir string, session *garden.Session, mouse bool) error {
 }
 func (u *UI) installInput() {
 	u.app.SetInputCapture(func(e *tcell.EventKey) *tcell.EventKey {
-		u.syncInputMode()
-		defer u.syncInputMode()
-		if u.sshInputModes && (e.Key() == tcell.KeyF3 || e.Key() == tcell.KeyF4) {
-			u.setTerminalMode(!u.terminalMode)
+		if e.Key() == tcell.KeyF3 || e.Key() == tcell.KeyF4 {
+			u.setTerminalMode(e.Key() == tcell.KeyF4)
 			return nil
 		}
 		if e.Key() == tcell.KeyF10 {
@@ -95,14 +86,6 @@ func (u *UI) installInput() {
 				return nil
 			}
 			u.app.Stop()
-			return nil
-		}
-		if e.Key() == tcell.KeyF3 || e.Key() == tcell.KeyF4 {
-			key := tcell.KeyCtrlY
-			if e.Key() == tcell.KeyF4 {
-				key = tcell.KeyCtrlV
-			}
-			u.clipboardShortcut(key)
 			return nil
 		}
 		if e.Key() == tcell.KeyF12 {

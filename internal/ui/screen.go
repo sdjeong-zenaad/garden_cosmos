@@ -13,7 +13,12 @@ type appScreen struct {
 
 func (u *UI) screenRoot() tview.Primitive {
 	bar := &functionBar{Box: tview.NewBox(), ui: u}
-	return &appScreen{tview.NewFlex().SetDirection(tview.FlexRow).AddItem(u.pages, 0, 1, true).AddItem(bar, 1, 0, false), u, bar}
+	layout := tview.NewFlex().SetDirection(tview.FlexRow).AddItem(u.pages, 0, 1, true)
+	if u.hasClipboard() {
+		layout.AddItem(u.clipboardButtons(), 1, 0, false)
+	}
+	layout.AddItem(bar, 1, 0, false)
+	return &appScreen{layout, u, bar}
 }
 func (s *appScreen) Draw(screen tcell.Screen) {
 	_, page := s.ui.pages.GetFrontPage()
@@ -63,30 +68,10 @@ func (b *functionBar) labels() []string {
 	if page != nil && page == u.calculatorPage {
 		labels[10] = "닫기"
 	}
-	// Draw runs under tview's application lock. Inspect primitives directly;
-	// never call Application.GetFocus (or any locking application API) here.
-	if focusedInput(page) != nil {
-		labels[2] = "복사"
-		labels[3] = "붙임"
-	}
-	if u.output.HasFocus() || (u.pickerList != nil && u.pickerList.HasFocus()) {
-		labels[2] = "복사"
-	}
-	if v := queryResultPane(page); v != nil {
+	if queryResultPane(page) != nil {
 		labels[8] = "돌아가기"
-		if v.HasFocus() {
-			labels[2] = "복사"
-		}
 	}
-	if u.sshInputModes {
-		label := "터미널"
-		if u.terminalMode {
-			label = "앱모드"
-		}
-		labels[2], labels[3] = label, label
-	} else if u.terminalClipboard {
-		labels[2], labels[3] = "", ""
-	}
+	labels[2], labels[3] = "마우스 사용", "마우스 해제"
 	labels[0] = "CLI"
 	labels[9] = "종료"
 	return labels
@@ -135,8 +120,8 @@ func (b *functionBar) Draw(screen tcell.Screen) {
 		}
 		tview.Print(screen, key, left, y, right-left, tview.AlignLeft, tcell.ColorWhite)
 		label := labels[i]
-		if label == "붙임" && right-left-len(key) >= 8 {
-			label = "붙여넣기"
+		if (i == 2 || i == 3) && tview.TaggedStringWidth(label) > right-left-len(key) {
+			label = []string{"사용", "해제"}[i-2]
 		}
 		tview.Print(screen, label, left+len(key), y, max(0, right-left-len(key)), tview.AlignLeft, tcell.ColorBlack)
 	}

@@ -34,7 +34,7 @@ func TestFunctionBarFixedSlots(t *testing.T) {
 	field := u.editor.form.GetFormItem(0).(*tview.InputField)
 	u.app.SetFocus(field)
 	labels := root.bar.labels()
-	if labels[2] != "복사" || labels[3] != "붙임" {
+	if labels[2] != "마우스 사용" || labels[3] != "마우스 해제" {
 		t.Fatal(labels)
 	}
 	// Clicking the F6 slot uses exactly the keyboard action and keeps the footer unfocused.
@@ -44,8 +44,8 @@ func TestFunctionBarFixedSlots(t *testing.T) {
 		t.Fatal("F6 click did not focus actions")
 	}
 	labels = root.bar.labels()
-	if labels[2] != "" || labels[3] != "" {
-		t.Fatal("inactive clipboard labels still visible", labels)
+	if labels[2] != "마우스 사용" || labels[3] != "마우스 해제" {
+		t.Fatal("mouse labels changed with focus", labels)
 	}
 }
 

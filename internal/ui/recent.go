@@ -131,6 +131,9 @@ func (u *UI) entryPicker(addressBook bool) {
 			reload(search.GetText())
 		}
 	}}, {"닫기", u.close}} {
+		if b.label == "복사" && !u.hasClipboard() {
+			continue
+		}
 		buttons.AddItem(tview.NewButton("["+b.label+"]").SetSelectedFunc(b.fn), 0, 1, false).AddItem(nil, 1, 0, false)
 	}
 	layout := tview.NewFlex().SetDirection(tview.FlexRow).AddItem(search, 1, 0, false).AddItem(list, 0, 1, true).AddItem(info, 2, 0, false).AddItem(buttons, 1, 0, false)

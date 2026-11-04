@@ -157,14 +157,18 @@ func (u *UI) calculator() {
 				result.SetText("명령 입력 폼에서 사용할 입력 칸을 활성화하고 선택한 뒤 계산기를 여세요.")
 			}
 		}
-	}).AddButton("결과 복사", func() {
-		if value := final.GetText(false); value != "" {
-			if err := u.copyClipboard(value); err != nil {
-				result.SetText(tview.Escape(err.Error()))
-				save()
+	})
+	if u.hasClipboard() {
+		f.AddButton("결과 복사", func() {
+			if value := final.GetText(false); value != "" {
+				if err := u.copyClipboard(value); err != nil {
+					result.SetText(tview.Escape(err.Error()))
+					save()
+				}
 			}
-		}
-	}).AddButton("토큰 저장", func() {
+		})
+	}
+	f.AddButton("토큰 저장", func() {
 		defer save()
 		d, e := strconv.Atoi(field(3).GetText())
 		if e != nil || d < 0 || d > 36 || field(1).GetText() == "" || field(2).GetText() == "" {
