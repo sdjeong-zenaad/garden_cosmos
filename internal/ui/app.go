@@ -16,6 +16,14 @@ import (
 )
 
 type UI struct {
+	focusRepairFrom      *tview.Button
+	focusRepairTarget    tview.Primitive
+	focusRepairQueued    bool
+	focusOrders          map[tview.Primitive]func() []tview.Primitive
+	calculatorSave       *deferredSave
+	calculatorCancel     context.CancelFunc
+	launchTask           func(func())
+	postTask             func(func())
 	screen               *appScreen
 	calculatorPage       tview.Primitive
 	terminalMode         bool
@@ -49,15 +57,29 @@ func Run(dir string, session *garden.Session, mouse bool) error {
 	if e := garden.Load(filepath.Join(dir, "bookmarks.json"), &u.store); e != nil && !os.IsNotExist(e) {
 		return e
 	}
+	u.launchTask = func(f func()) { go f() }
+	u.postTask = func(f func()) { u.app.QueueUpdateDraw(f) }
 	u.build()
 	u.terminalMode = !mouse
 	u.app.SetRoot(u.screenRoot(), true).EnableMouse(mouse).EnablePaste(true)
 	u.installInput()
 	u.installStartup()
-	return u.app.Run()
+	err := u.app.Run()
+	if u.calculatorCancel != nil {
+		u.calculatorCancel()
+	}
+	saveErr := u.flushCalculator()
+	if err != nil {
+		return err
+	}
+	return saveErr
 }
 func (u *UI) installInput() {
 	u.app.SetInputCapture(func(e *tcell.EventKey) *tcell.EventKey {
+		u.repairFocus()
+		if u.cycleFocus(nil, e.Key()) {
+			return nil
+		}
 		if u.screen != nil && u.screen.localControlInput(e) {
 			return nil
 		}
@@ -69,6 +91,10 @@ func (u *UI) installInput() {
 			return nil
 		}
 		if e.Key() == tcell.KeyF10 {
+			if err := u.flushCalculator(); err != nil {
+				u.alert(err.Error())
+				return nil
+			}
 			if err := u.rememberInputs(); err != nil {
 				u.alert(err.Error())
 				return nil
@@ -90,6 +116,10 @@ func (u *UI) installInput() {
 			}
 			if e := u.rememberInputs(); e != nil {
 				u.alert(e.Error())
+				return nil
+			}
+			if err := u.flushCalculator(); err != nil {
+				u.alert(err.Error())
 				return nil
 			}
 			u.app.Stop()
@@ -151,24 +181,7 @@ func (u *UI) installInput() {
 		case tcell.KeyEscape:
 			u.app.SetFocus(u.list)
 			return nil
-		case tcell.KeyBacktab:
-			if u.app.GetFocus() == u.search {
-				u.app.SetFocus(u.output)
-			} else if u.app.GetFocus() == u.output {
-				u.app.SetFocus(u.list)
-			} else {
-				u.app.SetFocus(u.search)
-			}
-			return nil
-		case tcell.KeyTab:
-			if u.app.GetFocus() == u.search {
-				u.app.SetFocus(u.list)
-			} else if u.app.GetFocus() == u.list {
-				u.app.SetFocus(u.output)
-			} else {
-				u.app.SetFocus(u.search)
-			}
-			return nil
+
 		}
 		return e
 	})
@@ -239,12 +252,22 @@ func (u *UI) build() {
 	right := tview.NewFlex().SetDirection(tview.FlexRow).AddItem(u.help, 0, 1, false).AddItem(u.output, 0, 2, false)
 	body := tview.NewFlex().AddItem(left, 0, 1, true).AddItem(right, 0, 2, false)
 	root := tview.NewFlex().SetDirection(tview.FlexRow).AddItem(u.status, 2, 0, false).AddItem(body, 0, 1, true)
+	u.setFocusOrder(root, func() []tview.Primitive { return []tview.Primitive{u.search, u.list, u.output} })
 	u.pages.AddPage("main", root, true, true)
 	u.message("gcosm · CLI를 선택하세요 (F1)")
 }
 func (u *UI) message(s string) { u.status.SetText(tview.Escape(garden.Clean(s))) }
 func (u *UI) close() {
+	if err := u.flushCalculator(); err != nil {
+		u.message(err.Error())
+		return
+	}
+	if u.calculatorCancel != nil {
+		u.calculatorCancel()
+		u.calculatorCancel = nil
+	}
 	u.calculatorPage = nil
+	u.forgetPageFocus("dialog")
 	u.pages.RemovePage("dialog")
 	if u.editor != nil {
 		u.app.SetFocus(u.editor.form)
@@ -253,6 +276,13 @@ func (u *UI) close() {
 	}
 }
 func (u *UI) modal(p tview.Primitive, w, h int) {
+	if u.calculatorCancel != nil {
+		u.calculatorCancel()
+		u.calculatorCancel = nil
+	}
+	if err := u.flushCalculator(); err != nil {
+		u.message(err.Error())
+	}
 	u.calculatorPage = nil
 	_, _, sw, sh := u.pages.GetRect()
 	if sw > 0 && w > sw {
@@ -263,6 +293,7 @@ func (u *UI) modal(p tview.Primitive, w, h int) {
 	}
 	box := tview.NewFlex().AddItem(nil, 0, 1, false).AddItem(p, w, 1, true).AddItem(nil, 0, 1, false)
 	outer := tview.NewFlex().SetDirection(tview.FlexRow).AddItem(nil, 0, 1, false).AddItem(box, h, 1, true).AddItem(nil, 0, 1, false)
+	u.forgetPageFocus("dialog")
 	u.pages.AddPage("dialog", outer, true, true)
 	u.app.SetFocus(p)
 }
@@ -277,7 +308,7 @@ func (u *UI) settings() {
 	}
 	form := tview.NewForm()
 	form.AddInputField("CLI 경로", u.profile.Binary, 54, nil, nil).AddInputField("체인 home (선택)", u.profile.Home, 54, nil, nil)
-	field := form.GetFormItem(0).(*tview.InputField)
+	field := unwrapFormItem(form.GetFormItem(0)).(*tview.InputField)
 	styleAutocomplete(field)
 	field.SetAutocompleteFunc(func(s string) []string {
 		if s == "" {
@@ -290,7 +321,7 @@ func (u *UI) settings() {
 		return matches
 	})
 	form.AddButton("저장 및 분석", func() {
-		p := garden.Profile{Binary: strings.TrimSpace(field.GetText()), Home: strings.TrimSpace(form.GetFormItem(1).(*tview.InputField).GetText())}
+		p := garden.Profile{Binary: strings.TrimSpace(field.GetText()), Home: strings.TrimSpace(unwrapFormItem(form.GetFormItem(1)).(*tview.InputField).GetText())}
 		binary, _, e := garden.Identity(p.Binary)
 		if e != nil {
 			u.alert(e.Error())
@@ -304,16 +335,10 @@ func (u *UI) settings() {
 				return
 			}
 		}
-		if e = garden.Save(filepath.Join(u.dir, "profile.json"), p); e != nil {
-			u.alert(e.Error())
+		if err := u.applyProfile(p); err != nil {
+			u.alert(err.Error())
 			return
 		}
-		u.profile = p
-		u.descriptor = nil
-		u.selected = nil
-		u.list.Clear()
-		u.close()
-		u.app.SetFocus(u.search)
 		u.refresh(false)
 	})
 	form.AddButton("현재 CLI 재분석", func() {
@@ -593,4 +618,25 @@ func (u *UI) bat() {
 		c.Stderr = os.Stderr
 		_ = c.Run()
 	})
+}
+
+// Commit the profile transition before starting asynchronous analysis. Drafts
+// retain the old descriptor identity, and no old editor survives the switch.
+func (u *UI) applyProfile(p garden.Profile) error {
+	if u.editor != nil {
+		u.leaveCommand()
+		if u.editor != nil {
+			return fmt.Errorf("이전 명령 입력을 저장하지 못했습니다")
+		}
+	}
+	if err := garden.Save(filepath.Join(u.dir, "profile.json"), p); err != nil {
+		return err
+	}
+	u.profile = p
+	u.descriptor = nil
+	u.selected = nil
+	u.list.Clear()
+	u.close()
+	u.app.SetFocus(u.search)
+	return nil
 }

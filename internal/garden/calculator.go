@@ -1,6 +1,7 @@
 package garden
 
 import (
+	"context"
 	"fmt"
 	"math/big"
 	"strconv"
@@ -12,16 +13,30 @@ type Token struct {
 	Symbol, Denom string
 	Decimals      int
 }
+
+const MaxCalculationBits = 8192
+
+func checkMagnitude(r *big.Rat) error {
+	if r.Num().BitLen() > MaxCalculationBits || r.Denom().BitLen() > MaxCalculationBits {
+		return fmt.Errorf("계산 결과가 너무 큽니다 (분자·분모 최대 %d비트)", MaxCalculationBits)
+	}
+	return nil
+}
+
 type tokenParser struct {
+	ctx  context.Context
 	text string
 	at   int
 }
 
 func Calculate(expression string) (*big.Rat, error) {
+	return CalculateContext(context.Background(), expression)
+}
+func CalculateContext(ctx context.Context, expression string) (*big.Rat, error) {
 	if len(expression) > 2048 {
 		return nil, fmt.Errorf("수식은 2048자 이하로 입력하세요")
 	}
-	p := &tokenParser{text: expression}
+	p := &tokenParser{text: expression, ctx: ctx}
 	r, e := p.expr(0)
 	p.space()
 	if e == nil && p.at != len(p.text) {
@@ -55,6 +70,12 @@ func (p *tokenParser) expr(depth int) (*big.Rat, error) {
 		} else {
 			r.Sub(r, v)
 		}
+		if err := checkMagnitude(r); err != nil {
+			return nil, err
+		}
+		if err := p.ctx.Err(); err != nil {
+			return nil, err
+		}
 	}
 }
 func (p *tokenParser) term(depth int) (*big.Rat, error) {
@@ -81,9 +102,18 @@ func (p *tokenParser) term(depth int) (*big.Rat, error) {
 			}
 			r.Quo(r, v)
 		}
+		if err := checkMagnitude(r); err != nil {
+			return nil, err
+		}
+		if err := p.ctx.Err(); err != nil {
+			return nil, err
+		}
 	}
 }
 func (p *tokenParser) atom(depth int) (*big.Rat, error) {
+	if err := p.ctx.Err(); err != nil {
+		return nil, err
+	}
 	if depth > 64 {
 		return nil, fmt.Errorf("괄호 중첩 한도 초과")
 	}
@@ -147,6 +177,9 @@ func (p *tokenParser) atom(depth int) (*big.Rat, error) {
 	if !ok {
 		return nil, fmt.Errorf("숫자 형식 오류")
 	}
+	if err := checkMagnitude(v); err != nil {
+		return nil, err
+	}
 	return v, nil
 }
 func Scale(value *big.Rat, decimals int, toBase bool) (*big.Rat, error) {
@@ -156,9 +189,11 @@ func Scale(value *big.Rat, decimals int, toBase bool) (*big.Rat, error) {
 	factor := new(big.Rat).SetInt(new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(decimals)), nil))
 	result := new(big.Rat).Set(value)
 	if toBase {
-		return result.Mul(result, factor), nil
+		result.Mul(result, factor)
+	} else {
+		result.Quo(result, factor)
 	}
-	return result.Quo(result, factor), nil
+	return result, checkMagnitude(result)
 }
 
 // FormatRat returns an exact finite decimal, or an explicit fraction for recurring decimals.

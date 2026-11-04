@@ -1,11 +1,13 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"garden_cosmos/internal/garden"
 	"github.com/rivo/tview"
@@ -19,6 +21,10 @@ type calculatorState struct {
 }
 
 func (u *UI) calculator() {
+	if err := u.flushCalculator(); err != nil {
+		u.alert(err.Error())
+		return
+	}
 	presets := []garden.Token{{Symbol: "ATOM", Denom: "uatom", Decimals: 6}, {Symbol: "XPLA", Denom: "axpla", Decimals: 18}}
 	if e := garden.Load(filepath.Join(u.dir, "tokens.json"), &presets); e != nil && !os.IsNotExist(e) {
 		u.alert(e.Error())
@@ -52,8 +58,8 @@ func (u *UI) calculator() {
 	}
 	f.AddDropDown("토큰", labels, 0, nil).AddInputField("심볼", "", 34, nil, nil).AddInputField("최소 단위 denom", "", 34, nil, nil).AddInputField("decimal", "18", 8, nil, nil).AddInputField("수식", "0.1 + 0.2", 55, nil, nil)
 	f.AddDropDown("변환", []string{"사칙연산만", "표시 단위 → 최소 단위", "최소 단위 → 표시 단위"}, 0, nil)
-	field := func(i int) *tview.InputField { return f.GetFormItem(i).(*tview.InputField) }
-	f.GetFormItem(0).(*tview.DropDown).SetSelectedFunc(func(_ string, i int) {
+	field := func(i int) *tview.InputField { return unwrapFormItem(f.GetFormItem(i)).(*tview.InputField) }
+	unwrapFormItem(f.GetFormItem(0)).(*tview.DropDown).SetSelectedFunc(func(_ string, i int) {
 		if i > 0 {
 			p := presets[i-1]
 			field(1).SetText(p.Symbol)
@@ -68,32 +74,40 @@ func (u *UI) calculator() {
 			break
 		}
 	}
-	f.GetFormItem(0).(*tview.DropDown).SetCurrentOption(tokenIndex)
+	unwrapFormItem(f.GetFormItem(0)).(*tview.DropDown).SetCurrentOption(tokenIndex)
 	for i, value := range []string{state.Symbol, state.Denom, state.Decimal, state.Expression} {
 		field(i + 1).SetText(value)
 	}
-	f.GetFormItem(5).(*tview.DropDown).SetCurrentOption(state.Mode)
+	unwrapFormItem(f.GetFormItem(5)).(*tview.DropDown).SetCurrentOption(state.Mode)
 	result.SetText(state.Result)
 	final := tview.NewTextView().SetWrap(true).SetText(state.Final)
 	final.SetBorder(true).SetTitle(" 최종 변환 결과 ")
+	saver := &deferredSave{path: statePath, delay: 300 * time.Millisecond}
+	u.calculatorSave = saver
 	save := func() {
-		i, _ := f.GetFormItem(0).(*tview.DropDown).GetCurrentOption()
+		i, _ := unwrapFormItem(f.GetFormItem(0)).(*tview.DropDown).GetCurrentOption()
 		state.Token = ""
 		if i > 0 {
 			state.Token = presets[i-1].Denom
 		}
 		state.Symbol, state.Denom, state.Decimal, state.Expression = field(1).GetText(), field(2).GetText(), field(3).GetText(), field(4).GetText()
-		state.Mode, _ = f.GetFormItem(5).(*tview.DropDown).GetCurrentOption()
+		state.Mode, _ = unwrapFormItem(f.GetFormItem(5)).(*tview.DropDown).GetCurrentOption()
 		state.Result, state.Final = result.GetText(false), final.GetText(false)
-		if err := garden.Save(statePath, state); err != nil {
-			u.status.SetText(tview.Escape(err.Error()))
+		saver.Schedule(state)
+	}
+	var generation uint64
+	changed := func() {
+		generation++
+		if u.calculatorCancel != nil {
+			u.calculatorCancel()
 		}
+		save()
 	}
 	for i := 1; i <= 4; i++ {
-		field(i).SetChangedFunc(func(string) { save() })
+		field(i).SetChangedFunc(func(string) { changed() })
 	}
-	f.GetFormItem(5).(*tview.DropDown).SetSelectedFunc(func(string, int) { save() })
-	f.GetFormItem(0).(*tview.DropDown).SetSelectedFunc(func(_ string, i int) {
+	unwrapFormItem(f.GetFormItem(5)).(*tview.DropDown).SetSelectedFunc(func(string, int) { changed() })
+	unwrapFormItem(f.GetFormItem(0)).(*tview.DropDown).SetSelectedFunc(func(_ string, i int) {
 		if i > 0 {
 			p := presets[i-1]
 			field(1).SetText(p.Symbol)
@@ -102,62 +116,58 @@ func (u *UI) calculator() {
 		}
 		save()
 	})
-	calculate := func() string {
-		defer save()
+	calculate := func(insert bool) {
+		if u.calculatorCancel != nil {
+			u.calculatorCancel()
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		u.calculatorCancel = cancel
+		generation++
+		job := generation
+		expression, decimal, symbol, denom := field(4).GetText(), field(3).GetText(), field(1).GetText(), field(2).GetText()
+		mode, modeLabel := unwrapFormItem(f.GetFormItem(5)).(*tview.DropDown).GetCurrentOption()
+		_, origin := u.pages.GetFrontPage()
 		final.SetText("")
-		v, e := garden.Calculate(field(4).GetText())
-		if e != nil {
-			result.SetText("[red]" + tview.Escape(e.Error()))
-			return ""
-		}
-		_, mode := f.GetFormItem(5).(*tview.DropDown).GetCurrentOption()
-		text := "수식 값: " + garden.FormatRat(v)
-		idx, _ := f.GetFormItem(5).(*tview.DropDown).GetCurrentOption()
-		if idx > 0 {
-			d, e := strconv.Atoi(field(3).GetText())
-			if e != nil {
-				result.SetText("[red]decimal은 정수로 입력하세요")
-				return ""
+		result.SetText("계산 중…")
+		save()
+		work := func() {
+			details, formatted, transferable, err := calculateToken(ctx, expression, decimal, symbol, denom, mode, modeLabel)
+			apply := func() {
+				_, page := u.pages.GetFrontPage()
+				if ctx.Err() != nil || job != generation || page != origin {
+					return
+				}
+				if err != nil {
+					result.SetText("[red]" + tview.Escape(err.Error()))
+				} else {
+					result.SetText(tview.Escape(details))
+					final.SetText(formatted)
+				}
+				save()
+				if insert && transferable && err == nil {
+					if u.appendArg(formatted) {
+						u.close()
+					} else {
+						result.SetText("명령 입력 폼에서 사용할 입력 칸을 활성화하고 선택한 뒤 계산기를 여세요.")
+					}
+				}
 			}
-			v, e = garden.Scale(v, d, idx == 1)
-			if e != nil {
-				result.SetText("[red]" + tview.Escape(e.Error()))
-				return ""
+			if ctx.Err() != nil {
+				return
 			}
-			text += "\n" + mode + ": " + garden.FormatRat(v)
-			if idx == 1 && !v.IsInt() {
-				result.SetText(tview.Escape(text) + "\n[yellow]최소 단위가 정수가 아닙니다. 반올림하지 않았으며 인자에 삽입할 수 없습니다.")
-				return ""
-			}
-		}
-		result.SetText(tview.Escape(text))
-		formatted := garden.FormatRat(v)
-		if v.IsInt() {
-			formatted = v.Num().String()
-		}
-		switch idx {
-		case 1:
-			formatted += field(2).GetText()
-		case 2:
-			formatted += " " + field(1).GetText()
-		}
-		final.SetText(formatted)
-		for _, c := range formatted {
-			if c == '/' {
-				return ""
-			}
-		}
-		return formatted
-	}
-	f.AddButton("계산", func() { calculate() }).AddButton("인자에 삽입", func() {
-		if v := calculate(); v != "" {
-			if u.appendArg(v) {
-				u.close()
+			if u.postTask != nil {
+				u.postTask(apply)
 			} else {
-				result.SetText("명령 입력 폼에서 사용할 입력 칸을 활성화하고 선택한 뒤 계산기를 여세요.")
+				apply()
 			}
 		}
-	})
+		if u.launchTask != nil {
+			u.launchTask(work)
+		} else {
+			work()
+		}
+	}
+	f.AddButton("계산", func() { calculate(false) }).AddButton("인자에 삽입", func() { calculate(true) })
 	if u.hasClipboard() {
 		f.AddButton("결과 복사", func() {
 			if value := final.GetText(false); value != "" {
@@ -196,4 +206,39 @@ func (u *UI) calculator() {
 	layout := tview.NewFlex().SetDirection(tview.FlexRow).AddItem(f, 19, 0, true).AddItem(final, 3, 0, false).AddItem(result, 0, 1, false)
 	u.modal(layout, 96, 31)
 	_, u.calculatorPage = u.pages.GetFrontPage()
+}
+
+// Pure bounded computation: UI workers capture values, never read live widgets.
+func calculateToken(ctx context.Context, expression, decimal, symbol, denom string, mode int, modeLabel string) (string, string, bool, error) {
+	v, err := garden.CalculateContext(ctx, expression)
+	if err != nil {
+		return "", "", false, err
+	}
+	text := "수식 값: " + garden.FormatRat(v)
+	if mode > 0 {
+		d, err := strconv.Atoi(decimal)
+		if err != nil {
+			return "", "", false, fmt.Errorf("decimal은 정수로 입력하세요")
+		}
+		v, err = garden.Scale(v, d, mode == 1)
+		if err != nil {
+			return "", "", false, err
+		}
+		text += "\n" + modeLabel + ": " + garden.FormatRat(v)
+		if mode == 1 && !v.IsInt() {
+			return text + "\n최소 단위가 정수가 아닙니다. 반올림하지 않았으며 인자에 삽입할 수 없습니다.", "", false, nil
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return "", "", false, err
+	}
+	numeric := garden.FormatRat(v)
+	transferable := !strings.Contains(numeric, "/")
+	formatted := numeric
+	if mode == 1 {
+		formatted += denom
+	} else if mode == 2 {
+		formatted += " " + symbol
+	}
+	return text, formatted, transferable, nil
 }

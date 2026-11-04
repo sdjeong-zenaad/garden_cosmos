@@ -15,8 +15,8 @@ func TestBlockTypeAndCachedHashMouseSelection(t *testing.T) {
 	u.store.Put(hash, "hash", "고정 거래", "")
 	u.selected = &garden.Command{Path: []string{"query", "block"}, Usage: "demo query block --type=[height|hash] [height|hash] [flags]", Flags: []garden.Flag{{Name: "type", Type: "string", Default: "hash"}}}
 	u.commandForm()
-	input := u.editor.form.GetFormItem(0).(*tview.InputField)
-	drop := u.editor.form.GetFormItem(1).(*tview.DropDown)
+	input := unwrapFormItem(u.editor.form.GetFormItem(0)).(*tview.InputField)
+	drop := unwrapFormItem(u.editor.form.GetFormItem(1)).(*tview.DropDown)
 	screen := tcell.NewSimulationScreen("UTF-8")
 	screen.Init()
 	screen.SetSize(120, 40)

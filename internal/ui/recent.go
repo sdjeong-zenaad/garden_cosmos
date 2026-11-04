@@ -111,7 +111,10 @@ func (u *UI) entryPicker(addressBook bool) {
 		}
 	}
 	search.SetChangedFunc(reload)
-	list.SetSelectedFunc(func(int, string, string, rune) { insert() })
+	list.SetSelectedFunc(func(i int, _ string, _ string, _ rune) {
+		list.SetCurrentItem(i)
+		insert()
+	})
 	reload("")
 	buttons := tview.NewFlex()
 	for _, b := range []struct {
@@ -140,11 +143,7 @@ func (u *UI) entryPicker(addressBook bool) {
 	layout.SetInputCapture(func(e *tcell.EventKey) *tcell.EventKey {
 		switch e.Key() {
 		case tcell.KeyTab, tcell.KeyBacktab:
-			if u.app.GetFocus() == search {
-				u.app.SetFocus(list)
-			} else {
-				u.app.SetFocus(search)
-			}
+			u.cycleFocus(nil, e.Key())
 			return nil
 		case tcell.KeyF2:
 			u.entryPicker(!addressBook)
@@ -158,6 +157,9 @@ func (u *UI) entryPicker(addressBook bool) {
 			}
 			return nil
 		case tcell.KeyDelete:
+			if !list.HasFocus() {
+				return e
+			}
 			if e, ok := selected(); ok {
 				u.store.Delete(e.Value)
 				if err := u.persistEntries(); err != nil {
@@ -180,9 +182,9 @@ func (u *UI) editStoredEntry(entry garden.Entry, backToBook bool) {
 	f := tview.NewForm().AddInputField("주소 / 해시", entry.Value, 0, nil, nil).AddInputField("별명", entry.Nickname, 0, nil, nil).AddInputField("메모", entry.Note, 0, nil, nil)
 	status := tview.NewTextView().SetWrap(true).SetText("별명을 붙이면 주소·해시가 고정되어 자동 정리에서 제외됩니다. 별명과 메모를 지우면 고정이 해제됩니다. 주소는 주소록에도 표시됩니다.")
 	f.AddButton("저장", func() {
-		entry.Value = strings.TrimSpace(f.GetFormItem(0).(*tview.InputField).GetText())
-		entry.Nickname = f.GetFormItem(1).(*tview.InputField).GetText()
-		entry.Note = f.GetFormItem(2).(*tview.InputField).GetText()
+		entry.Value = strings.TrimSpace(unwrapFormItem(f.GetFormItem(0)).(*tview.InputField).GetText())
+		entry.Nickname = unwrapFormItem(f.GetFormItem(1)).(*tview.InputField).GetText()
+		entry.Note = unwrapFormItem(f.GetFormItem(2)).(*tview.InputField).GetText()
 		entry.AddressBook = newAddress || (garden.IsAddress(entry.Value) && strings.TrimSpace(entry.Nickname) != "")
 		if garden.IsAddress(entry.Value) {
 			entry.Kind = "address"

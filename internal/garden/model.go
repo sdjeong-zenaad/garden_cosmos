@@ -10,7 +10,7 @@ import (
 	json5 "github.com/titanous/json5"
 )
 
-const Schema = 1
+const Schema = 2
 
 type Flag struct {
 	Name, Short, Type, Default, Description string
@@ -30,6 +30,7 @@ type Config struct {
 type Descriptor struct {
 	Schema                             int
 	Binary, Version, Fingerprint, Home string
+	RequestedHome                      string
 	AnalyzedAt                         time.Time
 	Root                               *Command
 	Configs                            []Config

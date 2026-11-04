@@ -140,6 +140,8 @@ func (u *UI) contextMouse(event *tcell.EventMouse, action tview.MouseAction) (*t
 			return nil
 		}
 		switch v := p.(type) {
+		case *focusFormItem:
+			return find(v.FormItem)
 		case *fieldPane:
 			return find(v.Form)
 		case *fieldRow:

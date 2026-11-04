@@ -42,7 +42,7 @@ func clipboardForm(u *UI) *tview.Form {
 func TestClipboardInputAndReturn(t *testing.T) {
 	file := mockClipboard(t)
 	u := editorFixture(t)
-	input := u.editor.form.GetFormItem(0).(*tview.InputField)
+	input := unwrapFormItem(u.editor.form.GetFormItem(0)).(*tview.InputField)
 	input.SetText("42")
 	u.app.SetFocus(input)
 	u.clipboardMenu()
@@ -85,7 +85,7 @@ func TestCopyFilteredResult(t *testing.T) {
 func TestClipboardRejectsNumericPaste(t *testing.T) {
 	file := mockClipboard(t)
 	u := editorFixture(t)
-	input := u.editor.form.GetFormItem(0).(*tview.InputField)
+	input := unwrapFormItem(u.editor.form.GetFormItem(0)).(*tview.InputField)
 	input.SetText("42")
 	u.app.SetFocus(input)
 	os.WriteFile(file, []byte("bad\n"), 0600)
@@ -110,7 +110,7 @@ func TestRightClickInputClipboard(t *testing.T) {
 	screen.SetSize(100, 30)
 	u.pages.SetRect(0, 0, 100, 30)
 	u.pages.Draw(screen)
-	input := u.editor.form.GetFormItem(0).(*tview.InputField)
+	input := unwrapFormItem(u.editor.form.GetFormItem(0)).(*tview.InputField)
 	input.SetText("4")
 	u.app.SetFocus(u.editor.form.GetFormItem(1))
 	x, y, _, _ := input.GetRect()
@@ -134,7 +134,7 @@ func TestClipboardButtons(t *testing.T) {
 	file := mockClipboard(t)
 	u := editorFixture(t)
 	u.installInput()
-	field := u.editor.form.GetFormItem(0).(*tview.InputField)
+	field := unwrapFormItem(u.editor.form.GetFormItem(0)).(*tview.InputField)
 	field.SetText("42")
 	u.app.SetFocus(field)
 	clickClipboardButton(u, 0)
@@ -162,7 +162,7 @@ func TestAddressRegistrationClipboardAfterMouseFocus(t *testing.T) {
 	_, page := u.pages.GetFrontPage()
 	panel := page.(*tview.Flex).GetItem(1).(*tview.Flex).GetItem(1).(*tview.Flex)
 	form := panel.GetItem(0).(*tview.Form)
-	field := form.GetFormItem(0).(*tview.InputField)
+	field := unwrapFormItem(form.GetFormItem(0)).(*tview.InputField)
 	screen := tcell.NewSimulationScreen("UTF-8")
 	screen.Init()
 	defer screen.Fini()
@@ -202,7 +202,7 @@ func TestAddressRegistrationClipboardAfterMouseFocus(t *testing.T) {
 func TestTerminalClipboardFooterAndPaste(t *testing.T) {
 	u := editorFixture(t)
 	t.Setenv("PATH", t.TempDir())
-	field := u.editor.form.GetFormItem(0).(*tview.InputField)
+	field := unwrapFormItem(u.editor.form.GetFormItem(0)).(*tview.InputField)
 	u.app.SetFocus(field)
 	bar := &functionBar{ui: u}
 	labels := bar.labels()

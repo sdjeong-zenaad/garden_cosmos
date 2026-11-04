@@ -16,6 +16,12 @@ func editorFixture(t *testing.T) *UI {
 	t.Helper()
 	u := &UI{app: tview.NewApplication(), pages: tview.NewPages(), dir: t.TempDir()}
 	u.build()
+	t.Cleanup(func() {
+		if u.calculatorCancel != nil {
+			u.calculatorCancel()
+		}
+		_ = u.flushCalculator()
+	})
 	u.selected = &garden.Command{Path: []string{"query", "block"}, Usage: "demo query block <height> [flags]", Help: "block help", Flags: []garden.Flag{{Name: "label", Type: "string"}, {Name: "chain-id", Type: "string"}, {Name: "output", Type: "string", Description: "format (text|json)"}, {Name: "trace", Type: "bool"}}}
 	u.descriptor = &garden.Descriptor{Binary: "/bin/echo", Home: "/tmp/chain-a", Root: u.selected}
 	u.commandForm()
@@ -31,11 +37,11 @@ func TestCommandFormValidationPersistence(t *testing.T) {
 	if name, _ := u.pages.GetFrontPage(); name != "command" {
 		t.Fatal("validation lost form")
 	}
-	height := ed.form.GetFormItem(0).(*tview.InputField)
+	height := unwrapFormItem(ed.form.GetFormItem(0)).(*tview.InputField)
 	height.SetText("42")
 	// Required height, optional label checkbox/input, chain-id checkbox/input.
-	ed.form.GetFormItem(2).(*fieldRow).check.SetChecked(true)
-	ed.form.GetFormItem(2).(*fieldRow).FormItem.(*tview.InputField).SetText("chain-a")
+	unwrapFormItem(ed.form.GetFormItem(2)).(*fieldRow).check.SetChecked(true)
+	unwrapFormItem(ed.form.GetFormItem(2)).(*fieldRow).FormItem.(*tview.InputField).SetText("chain-a")
 	if e := u.saveCommon(); e != nil {
 		t.Fatal(e)
 	}
@@ -82,7 +88,7 @@ func TestCommandFormScreenAndInsert(t *testing.T) {
 	if !strings.Contains(text.String(), "*   height") || !strings.Contains(text.String(), "--chain-id") {
 		t.Fatal("form fields not drawn")
 	}
-	input := u.editor.form.GetFormItem(0).(*tview.InputField)
+	input := unwrapFormItem(u.editor.form.GetFormItem(0)).(*tview.InputField)
 	u.app.SetFocus(input)
 	if !u.appendArg("1000000000000000001") || u.editor.values["arg:0"].Value != "1000000000000000001" {
 		t.Fatal("calculator/bookmark value not connected to argv")
@@ -173,7 +179,7 @@ func TestPinnedActionsAndTerminalPaste(t *testing.T) {
 			t.Fatalf("missing pinned action %s: %s", label, text)
 		}
 	}
-	input := u.editor.form.GetFormItem(0).(*tview.InputField)
+	input := unwrapFormItem(u.editor.form.GetFormItem(0)).(*tview.InputField)
 	input.SetText("1")
 	complete := func(string) []string { return []string{"123"} }
 	u.editor.autocomplete[input] = complete
@@ -221,7 +227,7 @@ func TestInlineFieldsPreviewAndDescription(t *testing.T) {
 	root := u.screenRoot()
 	root.SetRect(0, 0, 100, 30)
 	root.Draw(screen)
-	row := ed.form.GetFormItem(2).(*fieldRow)
+	row := unwrapFormItem(ed.form.GetFormItem(2)).(*fieldRow)
 	_, cy, _, _ := row.check.GetRect()
 	_, iy, _, _ := row.FormItem.GetRect()
 	if cy != iy {
@@ -288,7 +294,7 @@ func TestCheckboxNavigationAndFormLayout(t *testing.T) {
 	root.SetRect(0, 0, 100, 24)
 	root.Draw(s)
 	ed := u.editor
-	row := ed.form.GetFormItem(1).(*fieldRow)
+	row := unwrapFormItem(ed.form.GetFormItem(1)).(*fieldRow)
 	ed.form.SetFocus(1)
 	u.app.SetFocus(ed.form)
 	ed.form.InputHandler()(tcell.NewEventKey(tcell.KeyRune, ' ', tcell.ModNone), func(p tview.Primitive) { u.app.SetFocus(p) })
@@ -304,7 +310,7 @@ func TestCheckboxNavigationAndFormLayout(t *testing.T) {
 	ed.form.SetFocus(1)
 	u.app.SetFocus(ed.form)
 	ed.form.InputHandler()(tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone), func(p tview.Primitive) { u.app.SetFocus(p) })
-	next := ed.form.GetFormItem(2).(*fieldRow)
+	next := unwrapFormItem(ed.form.GetFormItem(2)).(*fieldRow)
 	if u.app.GetFocus() != next.check {
 		t.Fatal("down did not reach next checkbox")
 	}
@@ -320,7 +326,7 @@ func TestCheckboxNavigationAndFormLayout(t *testing.T) {
 	if u.app.GetFocus() != next.FormItem {
 		t.Fatal("mouse check focused wrong field")
 	}
-	for _, want := range []tview.Primitive{next.check, row.FormItem, row.check, ed.form.GetFormItem(0)} {
+	for _, want := range []tview.Primitive{next.check, row.FormItem, row.check, unwrapFormItem(ed.form.GetFormItem(0))} {
 		ed.form.InputHandler()(tcell.NewEventKey(tcell.KeyBacktab, 0, tcell.ModNone), func(p tview.Primitive) { u.app.SetFocus(p) })
 		if u.app.GetFocus() != want {
 			t.Fatalf("reverse form focus got %p want %p", u.app.GetFocus(), want)
@@ -427,6 +433,7 @@ func TestCommandPageClearsUnderlyingGaps(t *testing.T) {
 }
 
 func TestCommandPageTabIncludesButtons(t *testing.T) {
+	mockClipboard(t)
 	u := editorFixture(t)
 	s := tcell.NewSimulationScreen("UTF-8")
 	if err := s.Init(); err != nil {
@@ -441,14 +448,25 @@ func TestCommandPageTabIncludesButtons(t *testing.T) {
 	page := p.(*commandPage)
 	copyButton := page.GetItem(1).(*tview.Flex).GetItem(0).(*tview.Flex).GetItem(0).(*tview.Button)
 	buttons := page.GetItem(page.GetItemCount() - 1).(*tview.Flex)
-	first := u.editor.form.GetFormItem(0)
-	label := u.editor.form.GetFormItem(1).(*fieldRow)
-	chain := u.editor.form.GetFormItem(2).(*fieldRow)
-	output := u.editor.form.GetFormItem(3).(*fieldRow)
-	trace := u.editor.form.GetFormItem(4).(*fieldRow)
+	first := unwrapFormItem(u.editor.form.GetFormItem(0))
+	label := unwrapFormItem(u.editor.form.GetFormItem(1)).(*fieldRow)
+	chain := unwrapFormItem(u.editor.form.GetFormItem(2)).(*fieldRow)
+	output := unwrapFormItem(u.editor.form.GetFormItem(3)).(*fieldRow)
+	trace := unwrapFormItem(u.editor.form.GetFormItem(4)).(*fieldRow)
 	label.check.SetChecked(true)
 	output.check.SetChecked(true)
 	order := []tview.Primitive{copyButton, first, label.check, label.FormItem, chain.check, output.check, output.FormItem, trace.check, buttons.GetItem(0).(*edgeButton).Button, buttons.GetItem(2).(*edgeButton).Button, buttons.GetItem(4).(*edgeButton).Button}
+	root.Draw(s)
+	var expanded []tview.Primitive
+	for _, p := range order {
+		expanded = append(expanded, p)
+		for _, c := range root.(*appScreen).controls {
+			if c.target == p {
+				expanded = append(expanded, c.button)
+			}
+		}
+	}
+	order = expanded
 	for _, key := range []tcell.Key{tcell.KeyTab, tcell.KeyBacktab} {
 		u.app.SetFocus(copyButton)
 		for step := 1; step <= len(order); step++ {
@@ -520,7 +538,7 @@ func TestAllFlagsSharedAcrossCommands(t *testing.T) {
 
 func TestPreviewDoesNotSaveFlags(t *testing.T) {
 	u := editorFixture(t)
-	u.editor.form.GetFormItem(0).(*tview.InputField).SetText("42")
+	unwrapFormItem(u.editor.form.GetFormItem(0)).(*tview.InputField).SetText("42")
 	u.editor.values["flag:chain-id"] = garden.FieldValue{Enabled: true, Value: "preview-only"}
 	u.submitForm(false)
 	if _, err := os.Stat(filepath.Join(u.dir, "common-flags.json")); !os.IsNotExist(err) {
@@ -536,10 +554,10 @@ func TestBlockTypeRequiredDropdown(t *testing.T) {
 	if u.editor.form.GetFormItemCount() != 2 {
 		t.Fatal("duplicate positional input")
 	}
-	if _, ok := u.editor.form.GetFormItem(0).(*tview.InputField); !ok {
+	if _, ok := unwrapFormItem(u.editor.form.GetFormItem(0)).(*tview.InputField); !ok {
 		t.Fatal("missing positional input")
 	}
-	drop, ok := u.editor.form.GetFormItem(1).(*tview.DropDown)
+	drop, ok := unwrapFormItem(u.editor.form.GetFormItem(1)).(*tview.DropDown)
 	if !ok || !strings.Contains(drop.GetLabel(), "*   --type") {
 		t.Fatal("required flag dropdown missing")
 	}
@@ -561,7 +579,7 @@ func TestSharedTypeMustMatchCommandChoices(t *testing.T) {
 		t.Helper()
 		u.selected = c
 		u.commandForm()
-		drop := u.editor.form.GetFormItem(1).(*tview.DropDown)
+		drop := unwrapFormItem(u.editor.form.GetFormItem(1)).(*tview.DropDown)
 		if _, got := drop.GetCurrentOption(); got != want {
 			t.Fatalf("%v: got %s want %s", c.Path, got, want)
 		}

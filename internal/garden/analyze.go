@@ -91,7 +91,7 @@ func Analyze(ctx context.Context, binary, home string, progress func(string)) (*
 	if e != nil {
 		return nil, fmt.Errorf("version: %w", e)
 	}
-	d := &Descriptor{Schema: Schema, Binary: p, Fingerprint: hash, Version: strings.TrimSpace(ver), Home: home, AnalyzedAt: time.Now()}
+	d := &Descriptor{Schema: Schema, Binary: p, Fingerprint: hash, Version: strings.TrimSpace(ver), Home: home, RequestedHome: home, AnalyzedAt: time.Now()}
 	count := 0
 	var walk func([]string, int) (*Command, error)
 	walk = func(path []string, depth int) (*Command, error) {
@@ -156,7 +156,7 @@ func Refresh(ctx context.Context, dir string, p Profile, force bool, progress fu
 	if ve != nil {
 		return nil, ve
 	}
-	if !force && e == nil && d.Root != nil && d.Schema == Schema && d.Binary == binary && d.Fingerprint == hash && d.Version == strings.TrimSpace(ver) && (p.Home == "" || p.Home == d.Home) {
+	if !force && e == nil && d.Root != nil && d.Schema == Schema && d.Binary == binary && d.Fingerprint == hash && d.Version == strings.TrimSpace(ver) && p.Home == d.RequestedHome {
 		d.Configs = ReadConfigs(d.Home)
 		return &d, nil
 	}

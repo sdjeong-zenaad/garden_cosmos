@@ -32,8 +32,6 @@ func (s *appScreen) drawControl(screen tcell.Screen, x, y, width int, label stri
 	button := s.controlButtons[key]
 	if button == nil {
 		button = tview.NewButton(label)
-		button.SetFocusFunc(func() { target.Focus(func(tview.Primitive) {}) })
-		button.SetBlurFunc(target.Blur)
 		styleButton(button)
 		s.controlButtons[key] = button
 	}
@@ -83,12 +81,13 @@ func (s *appScreen) decorateLocalControls(page tview.Primitive) {
 	labelWidths := map[*tview.InputField]int{}
 	visitWidgets(page, func(p tview.Primitive) {
 		if form, ok := p.(*tview.Form); ok {
+			s.ui.bindFormFocus(form)
 			labelWidth := 0
 			for i := 0; i < form.GetFormItemCount(); i++ {
 				labelWidth = max(labelWidth, tview.TaggedStringWidth(form.GetFormItem(i).GetLabel()))
 			}
 			for i := 0; i < form.GetFormItemCount(); i++ {
-				item := form.GetFormItem(i)
+				item := unwrapFormItem(form.GetFormItem(i))
 				width := labelWidth + 1
 				if row, ok := item.(*fieldRow); ok {
 					item = row.FormItem
@@ -230,6 +229,21 @@ func (s *appScreen) retainVisibleControls(screen tcell.Screen) {
 		}
 	}
 	s.controls = visible
+	for key, b := range s.controlButtons {
+		if !b.HasFocus() {
+			continue
+		}
+		found := false
+		for _, c := range visible {
+			if c.button == b {
+				found = true
+				break
+			}
+		}
+		if !found {
+			s.ui.requestFocusRepair(b, key.target)
+		}
+	}
 }
 
 // Local actions are outside the Form's item list. Route their keys before the
@@ -274,58 +288,11 @@ func (s *appScreen) localControlInput(e *tcell.EventKey) bool {
 				s.ui.app.SetFocus(peers[next])
 			}
 			return true
-		case tcell.KeyTab, tcell.KeyBacktab:
-			if key == tcell.KeyBacktab {
-				if index > 0 {
-					s.ui.app.SetFocus(peers[index-1])
-				} else {
-					s.ui.app.SetFocus(c.target)
-				}
-			} else if index+1 < len(peers) {
-				s.ui.app.SetFocus(peers[index+1])
-			} else {
-				s.ui.app.SetFocus(c.target)
-				if name, _ := s.ui.pages.GetFrontPage(); name == "main" && c.target == s.ui.search {
-					s.ui.app.SetFocus(s.ui.list)
-				} else {
-					s.ui.pages.InputHandler()(e, func(p tview.Primitive) { s.ui.app.SetFocus(p) })
-				}
-			}
-			return true
+
 		}
 		// Global actions still work; editing keys must not reach the retained input.
 		if key == tcell.KeyEscape || key == tcell.KeyCtrlC || (key >= tcell.KeyF1 && key <= tcell.KeyF12) {
 			return false
-		}
-		return true
-	}
-	if key != tcell.KeyTab && key != tcell.KeyBacktab {
-		return false
-	}
-	field := s.ui.modeFocus()
-	if key == tcell.KeyTab {
-		if _, ok := field.(*tview.InputField); ok {
-			for _, c := range s.controls {
-				if c.target == field {
-					s.ui.app.SetFocus(c.button)
-					return true
-				}
-			}
-		}
-	} else {
-		name, _ := s.ui.pages.GetFrontPage()
-		if name == "main" {
-			return false
-		}
-		s.ui.pages.InputHandler()(e, func(p tview.Primitive) { s.ui.app.SetFocus(p) })
-		target := s.ui.modeFocus()
-		if _, ok := target.(*tview.InputField); ok {
-			for i := len(s.controls) - 1; i >= 0; i-- {
-				if s.controls[i].target == target {
-					s.ui.app.SetFocus(s.controls[i].button)
-					break
-				}
-			}
 		}
 		return true
 	}

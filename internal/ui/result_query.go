@@ -113,19 +113,7 @@ func (u *UI) openResultQuery() {
 	page.SetInputCapture(func(e *tcell.EventKey) *tcell.EventKey {
 		switch e.Key() {
 		case tcell.KeyTab, tcell.KeyBacktab:
-			order := []tview.Primitive{view, query, result}
-			index := 1
-			for i, p := range order {
-				if p.HasFocus() {
-					index = i
-					break
-				}
-			}
-			step := 1
-			if e.Key() == tcell.KeyBacktab {
-				step = -1
-			}
-			u.app.SetFocus(order[(index+step+len(order))%len(order)])
+			u.cycleFocus(page, e.Key())
 			return nil
 		case tcell.KeyF9:
 			u.close()
@@ -136,6 +124,8 @@ func (u *UI) openResultQuery() {
 		}
 		return e
 	})
+	u.forgetPageFocus("dialog")
+	u.setFocusOrder(page, func() []tview.Primitive { return []tview.Primitive{view, query, result} })
 	u.pages.AddPage("dialog", page, true, true)
 	u.app.SetFocus(query)
 }

@@ -42,8 +42,8 @@ func modeFixture(t *testing.T, remote bool) (*UI, *appScreen, *modeTestScreen, *
 	u.installInput()
 	form := tview.NewForm().AddInputField("number", "", 20, tview.InputFieldInteger, nil).AddInputField("text", "", 20, nil, nil).AddButton("done", func() {})
 	u.modal(form, 80, 20)
-	first := form.GetFormItem(0).(*tview.InputField)
-	second := form.GetFormItem(1).(*tview.InputField)
+	first := unwrapFormItem(form.GetFormItem(0)).(*tview.InputField)
+	second := unwrapFormItem(form.GetFormItem(1)).(*tview.InputField)
 	u.app.SetFocus(first)
 	root.Draw(s)
 	return u, root, s, first, second

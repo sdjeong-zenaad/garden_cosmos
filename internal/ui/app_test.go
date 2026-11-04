@@ -60,9 +60,9 @@ func TestScreenAndCalculator(t *testing.T) {
 	box := outer.GetItem(1).(*tview.Flex)
 	layout := box.GetItem(1).(*tview.Flex)
 	form := layout.GetItem(0).(*tview.Form)
-	form.GetFormItem(0).(*tview.DropDown).SetCurrentOption(2)
-	form.GetFormItem(4).(*tview.InputField).SetText("1.000000000000000001")
-	form.GetFormItem(5).(*tview.DropDown).SetCurrentOption(1)
+	unwrapFormItem(form.GetFormItem(0)).(*tview.DropDown).SetCurrentOption(2)
+	unwrapFormItem(form.GetFormItem(4)).(*tview.InputField).SetText("1.000000000000000001")
+	unwrapFormItem(form.GetFormItem(5)).(*tview.DropDown).SetCurrentOption(1)
 	form.GetButton(0).InputHandler()(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone), func(tview.Primitive) {})
 	result := layout.GetItem(1).(*tview.TextView).GetText(true)
 	if !strings.Contains(result, "1000000000000000001") {

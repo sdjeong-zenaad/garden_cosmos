@@ -12,7 +12,7 @@ func TestCalculatorComboOverlay(t *testing.T) {
 	_, page := u.pages.GetFrontPage()
 	layout := page.(*tview.Flex).GetItem(1).(*tview.Flex).GetItem(1).(*tview.Flex)
 	form := layout.GetItem(0).(*tview.Form)
-	drop := form.GetFormItem(5).(*tview.DropDown)
+	drop := unwrapFormItem(form.GetFormItem(5)).(*tview.DropDown)
 	s := tcell.NewSimulationScreen("UTF-8")
 	if err := s.Init(); err != nil {
 		t.Fatal(err)

@@ -22,7 +22,7 @@ type FieldValue struct {
 }
 type Preferences map[string]map[string]FieldValue
 
-var placeholders = regexp.MustCompile(`<([^>]+)>|\[([^\[\]]+)\]`)
+var placeholders = regexp.MustCompile(`(?:<([^>]+)>|\[([^\[\]]+)\])(?:\.\.\.)?`)
 var alternatives = regexp.MustCompile(`\(([a-zA-Z0-9_-]+(?:\|[a-zA-Z0-9_-]+)+)\)`)
 
 // Parse flag-owned placeholders before collecting positional placeholders.
@@ -56,7 +56,7 @@ func Fields(c *Command) []Field {
 		if name == "flags" || name == "command" || strings.HasPrefix(name, "--") {
 			continue
 		}
-		variadic := strings.HasSuffix(name, "...")
+		variadic := strings.HasSuffix(name, "...") || strings.HasSuffix(m[0], "...")
 		name = strings.TrimSuffix(name, "...")
 		if name == "" {
 			continue
@@ -234,7 +234,11 @@ func CommandArgs(c *Command, fields []Field, values map[string]FieldValue) []str
 	flagPosition := len(usage)
 	argIndex := 0
 	for _, loc := range placeholders.FindAllStringSubmatchIndex(string(usage), -1) {
-		name := string(usage[loc[0]+1 : loc[1]-1])
+		end := loc[1]
+		if strings.HasSuffix(string(usage[loc[0]:end]), "...") {
+			end -= 3
+		}
+		name := string(usage[loc[0]+1 : end-1])
 		if name == "flags" {
 			flagPosition = loc[0]
 			continue

@@ -13,6 +13,7 @@ import (
 )
 
 type commandEditor struct {
+	preferenceKey     string
 	pendingCompletion *tview.InputField
 	autocomplete      map[*tview.InputField]func(string) []string
 	recorded          map[string]garden.FieldValue
@@ -45,7 +46,7 @@ func (u *UI) commandForm() {
 		u.alert(e.Error())
 		return
 	}
-	ed := &commandEditor{command: u.selected, fields: garden.Fields(u.selected), values: map[string]garden.FieldValue{}, form: tview.NewForm(), feedback: tview.NewTextView().SetDynamicColors(true)}
+	ed := &commandEditor{preferenceKey: u.preferenceKey(), command: u.selected, fields: garden.Fields(u.selected), values: map[string]garden.FieldValue{}, form: tview.NewForm(), feedback: tview.NewTextView().SetDynamicColors(true)}
 	ed.autocomplete = map[*tview.InputField]func(string) []string{}
 	u.editor = ed
 	detail := tview.NewTextView().SetWrap(true)
@@ -201,7 +202,7 @@ func (u *UI) commandForm() {
 			item.(*fieldRow).check.SetInputCapture(func(e *tcell.EventKey) *tcell.EventKey {
 				if e.Key() == tcell.KeyUp || e.Key() == tcell.KeyDown {
 					for j := 0; j < ed.form.GetFormItemCount(); j++ {
-						if row, ok := ed.form.GetFormItem(j).(*fieldRow); ok {
+						if row, ok := unwrapFormItem(ed.form.GetFormItem(j)).(*fieldRow); ok {
 							row.backward = false
 						}
 					}
@@ -222,7 +223,7 @@ func (u *UI) commandForm() {
 	ed.form.SetInputCapture(func(e *tcell.EventKey) *tcell.EventKey {
 		if e.Key() == tcell.KeyTab || e.Key() == tcell.KeyBacktab {
 			for i := 0; i < ed.form.GetFormItemCount(); i++ {
-				if row, ok := ed.form.GetFormItem(i).(*fieldRow); ok {
+				if row, ok := unwrapFormItem(ed.form.GetFormItem(i)).(*fieldRow); ok {
 					row.backward = e.Key() == tcell.KeyBacktab
 				}
 			}
@@ -268,41 +269,7 @@ func (u *UI) commandForm() {
 	page.SetInputCapture(func(e *tcell.EventKey) *tcell.EventKey {
 		switch e.Key() {
 		case tcell.KeyTab, tcell.KeyBacktab:
-			// One page-wide cycle includes buttons outside tview.Form. Rebuild it
-			// after each checkbox change so disabled inputs are never focused.
-			order := []tview.Primitive{}
-			if u.hasClipboard() {
-				order = append(order, copyButton)
-			}
-			for i := 0; i < ed.form.GetFormItemCount(); i++ {
-				item := ed.form.GetFormItem(i)
-				if row, ok := item.(*fieldRow); ok {
-					order = append(order, row.check)
-					if row.check.IsChecked() {
-						order = append(order, row.FormItem)
-					}
-				} else {
-					order = append(order, item)
-				}
-			}
-			for _, button := range actions {
-				order = append(order, button)
-			}
-			current := -1
-			for i, item := range order {
-				if item == u.app.GetFocus() {
-					current = i
-					break
-				}
-			}
-			next := (current + 1) % len(order)
-			if e.Key() == tcell.KeyBacktab {
-				next = (current - 1 + len(order)) % len(order)
-				if current < 0 {
-					next = len(order) - 1
-				}
-			}
-			u.app.SetFocus(order[next])
+			u.cycleFocus(nil, e.Key())
 			return nil
 		case tcell.KeyF6:
 			if ed.form.HasFocus() {
@@ -327,7 +294,19 @@ func (u *UI) commandForm() {
 	for k, v := range ed.values {
 		ed.recorded[k] = v
 	}
-	u.pages.AddPage("command", &commandPage{Flex: page, ui: u}, true, true)
+	commandView := &commandPage{Flex: page, ui: u}
+	u.setFocusOrder(commandView, func() []tview.Primitive {
+		var order []tview.Primitive
+		if u.hasClipboard() {
+			order = append(order, copyButton)
+		}
+		order = append(order, formTargets(ed.form)...)
+		for _, button := range actions {
+			order = append(order, button)
+		}
+		return order
+	})
+	u.pages.AddPage("command", commandView, true, true)
 	u.app.SetFocus(ed.form)
 }
 func (u *UI) leaveCommand() {
@@ -343,8 +322,9 @@ func (u *UI) leaveCommand() {
 		for k, v := range u.editor.values {
 			values[k] = v
 		}
-		u.drafts[u.preferenceKey()+"\n"+strings.Join(u.editor.command.Path, " ")] = values
+		u.drafts[u.editor.preferenceKey+"\n"+strings.Join(u.editor.command.Path, " ")] = values
 	}
+	u.forgetPageFocus("command")
 	u.pages.RemovePage("command")
 	u.editor = nil
 	u.app.SetFocus(u.list)
@@ -360,7 +340,7 @@ func (u *UI) saveCommon() error {
 	if prefs == nil {
 		prefs = garden.Preferences{}
 	}
-	key := u.preferenceKey()
+	key := u.editor.preferenceKey
 	if prefs[key] == nil {
 		prefs[key] = map[string]garden.FieldValue{}
 	}

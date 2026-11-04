@@ -31,7 +31,7 @@ func TestFunctionBarFixedSlots(t *testing.T) {
 			}
 		}
 	}
-	field := u.editor.form.GetFormItem(0).(*tview.InputField)
+	field := unwrapFormItem(u.editor.form.GetFormItem(0)).(*tview.InputField)
 	u.app.SetFocus(field)
 	labels := root.bar.labels()
 	if labels[2] != "마우스 사용" || labels[3] != "마우스 해제" {

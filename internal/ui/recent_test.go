@@ -16,8 +16,8 @@ func TestInputRecentPickerAndStableIdentity(t *testing.T) {
 	e := u.editor
 	hash := strings.Repeat("a", 64)
 	// Use optional label input as a general hash parameter.
-	e.form.GetFormItem(1).(*fieldRow).check.SetChecked(true)
-	field := e.form.GetFormItem(1).(*fieldRow).FormItem.(*tview.InputField)
+	unwrapFormItem(e.form.GetFormItem(1)).(*fieldRow).check.SetChecked(true)
+	field := unwrapFormItem(e.form.GetFormItem(1)).(*fieldRow).FormItem.(*tview.InputField)
 	field.SetText(hash)
 	u.app.SetFocus(field)
 	u.bookmarks()
@@ -86,8 +86,8 @@ func TestEmptyAddressCompletionAndBlurCapture(t *testing.T) {
 	u.store.Capture(older+" "+hash+" "+newest, nil)
 	u.selected = &garden.Command{Usage: "demo [to_address] [txhash]", Path: []string{"query"}}
 	u.commandForm()
-	address := u.editor.form.GetFormItem(0).(*tview.InputField)
-	hashInput := u.editor.form.GetFormItem(1).(*tview.InputField)
+	address := unwrapFormItem(u.editor.form.GetFormItem(0)).(*tview.InputField)
+	hashInput := unwrapFormItem(u.editor.form.GetFormItem(1)).(*tview.InputField)
 	u.app.SetFocus(address)
 	screen := tcell.NewSimulationScreen("UTF-8")
 	screen.Init()
@@ -137,7 +137,7 @@ func TestCompletionAliasDisplayAndValueOnly(t *testing.T) {
 	root := u.screenRoot()
 	root.SetRect(0, 0, 140, 40)
 	for i, tc := range []struct{ value, alias string }{{address, "운영 [red] 지갑"}, {hash, "입금 거래"}} {
-		input := u.editor.form.GetFormItem(i).(*tview.InputField)
+		input := unwrapFormItem(u.editor.form.GetFormItem(i)).(*tview.InputField)
 		u.app.SetFocus(input)
 		root.Draw(screen)
 		got := u.editor.autocomplete[input]("")

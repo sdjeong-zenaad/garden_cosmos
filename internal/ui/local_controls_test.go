@@ -92,7 +92,7 @@ func TestInputControlsAvailabilityAndSpacing(t *testing.T) {
 	defer screen.Fini()
 	screen.SetSize(140, 40)
 	root.SetRect(0, 0, 140, 40)
-	row := u.editor.form.GetFormItem(1).(*fieldRow)
+	row := unwrapFormItem(u.editor.form.GetFormItem(1)).(*fieldRow)
 	field := row.FormItem.(*tview.InputField)
 	count := func() int {
 		n := 0
@@ -152,7 +152,7 @@ func TestInputClipboardKeyboardCycle(t *testing.T) {
 	defer screen.Fini()
 	screen.SetSize(140, 40)
 	root.SetRect(0, 0, 140, 40)
-	field := u.editor.form.GetFormItem(0).(*tview.InputField)
+	field := unwrapFormItem(u.editor.form.GetFormItem(0)).(*tview.InputField)
 	field.SetText("42")
 	u.app.SetFocus(field)
 	root.Draw(screen)
@@ -178,6 +178,13 @@ func TestInputClipboardKeyboardCycle(t *testing.T) {
 		}
 	}
 	press(tcell.KeyTab, copy)
+	if field.HasFocus() || !copy.HasFocus() || !u.editor.form.HasFocus() {
+		t.Fatal("inline action must own focus while keeping its form active")
+	}
+	u.editor.form.PasteHandler()("999", func(p tview.Primitive) { u.app.SetFocus(p) })
+	if field.GetText() != "42" {
+		t.Fatal("terminal paste edited input while copy button had focus")
+	}
 	press(tcell.KeyEnter, copy)
 	data, err := os.ReadFile(file)
 	if err != nil || string(data) != "42" {
@@ -193,9 +200,21 @@ func TestInputClipboardKeyboardCycle(t *testing.T) {
 	press(tcell.KeyBacktab, field)
 	press(tcell.KeyTab, copy)
 	press(tcell.KeyRight, paste)
-	next := u.editor.form.GetFormItem(1).(*fieldRow).check
+	next := unwrapFormItem(u.editor.form.GetFormItem(1)).(*fieldRow).check
 	press(tcell.KeyTab, next)
 	press(tcell.KeyBacktab, paste)
+	// A narrow terminal hides inline controls. The next input repairs focus
+	// before processing the key, rather than leaving an invisible action active.
+	screen.SetSize(30, 20)
+	root.SetRect(0, 0, 30, 20)
+	root.Draw(screen)
+	if u.focusRepairFrom == nil {
+		t.Fatal("hidden inline action did not request focus repair")
+	}
+	u.repairFocus()
+	if u.app.GetFocus() != field || !field.HasFocus() {
+		t.Fatal("resize did not return focus to the input")
+	}
 }
 
 func TestDisabledDropdownMatchesFormBackground(t *testing.T) {
@@ -210,7 +229,7 @@ func TestDisabledDropdownMatchesFormBackground(t *testing.T) {
 	root.SetRect(0, 0, 140, 40)
 	var drop *tview.DropDown
 	for i := 0; i < u.editor.form.GetFormItemCount(); i++ {
-		if row, ok := u.editor.form.GetFormItem(i).(*fieldRow); ok {
+		if row, ok := unwrapFormItem(u.editor.form.GetFormItem(i)).(*fieldRow); ok {
 			if d, ok := row.FormItem.(*tview.DropDown); ok {
 				drop = d
 				break

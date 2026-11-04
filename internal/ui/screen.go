@@ -83,6 +83,8 @@ func (b *functionBar) labels() []string {
 }
 func focusedInput(p tview.Primitive) *tview.InputField {
 	switch v := p.(type) {
+	case *focusFormItem:
+		return focusedInput(v.FormItem)
 	case *tview.InputField:
 		if v.HasFocus() {
 			return v
@@ -176,6 +178,10 @@ func decorateButtons(p tview.Primitive) {
 func visitWidgets(p tview.Primitive, visit func(tview.Primitive)) {
 	visit(p)
 	switch v := p.(type) {
+	case *focusFormItem:
+		visitWidgets(v.FormItem, visit)
+	case *edgeButton:
+		visitWidgets(v.Button, visit)
 	case *actionModal:
 		visitWidgets(v.Flex, visit)
 	case *commandPage:
