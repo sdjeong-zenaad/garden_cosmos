@@ -7,18 +7,19 @@ import (
 
 type appScreen struct {
 	*tview.Flex
-	ui  *UI
-	bar *functionBar
+	ui                 *UI
+	bar                *functionBar
+	controls           []localControl
+	controlButtons     map[controlKey]*tview.Button
+	clipboardAvailable bool
 }
 
 func (u *UI) screenRoot() tview.Primitive {
 	bar := &functionBar{Box: tview.NewBox(), ui: u}
 	layout := tview.NewFlex().SetDirection(tview.FlexRow).AddItem(u.pages, 0, 1, true)
-	if u.hasClipboard() {
-		layout.AddItem(u.clipboardButtons(), 1, 0, false)
-	}
 	layout.AddItem(bar, 1, 0, false)
-	return &appScreen{layout, u, bar}
+	u.screen = &appScreen{Flex: layout, ui: u, bar: bar, controlButtons: make(map[controlKey]*tview.Button)}
+	return u.screen
 }
 func (s *appScreen) Draw(screen tcell.Screen) {
 	_, page := s.ui.pages.GetFrontPage()
@@ -32,6 +33,9 @@ func (s *appScreen) Draw(screen tcell.Screen) {
 		}
 	}
 	decorateButtons(page)
+	s.controls = nil
+	s.clipboardAvailable = s.ui.hasClipboard()
+	s.decorateLocalControls(page)
 	s.Flex.Draw(screen)
 	visitWidgets(page, func(p tview.Primitive) {
 		if drop, ok := p.(*tview.DropDown); ok && drop.HasFocus() && drop.IsOpen() {
@@ -39,6 +43,7 @@ func (s *appScreen) Draw(screen tcell.Screen) {
 		}
 	})
 	s.bar.Draw(screen)
+	s.retainVisibleControls(screen)
 }
 
 var functionKeys = []tcell.Key{tcell.KeyF1, tcell.KeyF2, tcell.KeyF3, tcell.KeyF4, tcell.KeyF5, tcell.KeyF6, tcell.KeyF7, tcell.KeyF8, tcell.KeyF9, tcell.KeyF10, tcell.KeyF12}
@@ -55,9 +60,9 @@ func (b *functionBar) labels() []string {
 	name, page := u.pages.GetFrontPage()
 	switch name {
 	case "main":
-		labels = []string{"CLI", "주소록", "", "", "재분석", "설정", "실행", "대화형", "결과쿼리", "종료", "계산"}
+		labels = []string{"CLI", "주소록", "", "", "재분석", "설정", "실행", "실행", "결과쿼리", "종료", "계산"}
 	case "command":
-		labels = []string{"CLI", "주소록", "", "", "", "버튼", "실행", "대화형", "", "", "계산"}
+		labels = []string{"CLI", "주소록", "", "", "", "버튼", "일반 실행", "대화형 실행", "", "", "계산"}
 	case "clipboard":
 	default:
 		labels[10] = "계산"
@@ -120,8 +125,17 @@ func (b *functionBar) Draw(screen tcell.Screen) {
 		}
 		tview.Print(screen, key, left, y, right-left, tview.AlignLeft, tcell.ColorWhite)
 		label := labels[i]
-		if (i == 2 || i == 3) && tview.TaggedStringWidth(label) > right-left-len(key) {
-			label = []string{"사용", "해제"}[i-2]
+		if tview.TaggedStringWidth(label) > right-left-len(key) {
+			switch functionKeys[i] {
+			case tcell.KeyF3:
+				label = "마우스"
+			case tcell.KeyF4:
+				label = "해제"
+			case tcell.KeyF7:
+				label = "실행"
+			case tcell.KeyF8:
+				label = "대화형"
+			}
 		}
 		tview.Print(screen, label, left+len(key), y, max(0, right-left-len(key)), tview.AlignLeft, tcell.ColorBlack)
 	}

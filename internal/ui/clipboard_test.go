@@ -157,6 +157,7 @@ func TestAddressRegistrationClipboardAfterMouseFocus(t *testing.T) {
 	u := editorFixture(t)
 	u.leaveCommand()
 	u.installInput()
+	u.pages.SetRect(0, 0, 140, 40)
 	u.editStoredEntry(garden.Entry{AddressBook: true}, true)
 	_, page := u.pages.GetFrontPage()
 	panel := page.(*tview.Flex).GetItem(1).(*tview.Flex).GetItem(1).(*tview.Flex)
@@ -216,21 +217,29 @@ func TestTerminalClipboardFooterAndPaste(t *testing.T) {
 }
 
 func clickClipboardButton(u *UI, index int) {
-	row := u.clipboardButtons().(*tview.Flex)
+	target := u.modeFocus()
+	root := u.screenRoot().(*appScreen)
 	screen := tcell.NewSimulationScreen("UTF-8")
 	if err := screen.Init(); err != nil {
 		panic(err)
 	}
 	defer screen.Fini()
-	screen.SetSize(60, 1)
-	row.SetRect(0, 0, 60, 1)
-	row.Draw(screen)
-	button := row.GetItem(index * 2).(*tview.Button)
-	x, y, _, _ := button.GetRect()
-	event := tcell.NewEventMouse(x+1, y, tcell.Button1, 0)
-	focus := func(p tview.Primitive) { u.app.SetFocus(p) }
-	row.MouseHandler()(tview.MouseLeftDown, event, focus)
-	row.MouseHandler()(tview.MouseLeftClick, event, focus)
+	screen.SetSize(140, 40)
+	root.SetRect(0, 0, 140, 40)
+	root.Draw(screen)
+	label := []string{"복사", "붙여넣기"}[index]
+	for _, c := range root.controls {
+		if c.target != target || c.button.GetLabel() != label {
+			continue
+		}
+		x, y, _, _ := c.button.GetRect()
+		event := tcell.NewEventMouse(x+1, y, tcell.Button1, 0)
+		focus := func(p tview.Primitive) { u.app.SetFocus(p) }
+		root.MouseHandler()(tview.MouseLeftDown, event, focus)
+		root.MouseHandler()(tview.MouseLeftClick, event, focus)
+		return
+	}
+	panic("input clipboard button missing")
 }
 
 func TestNoClipboardButtonsWithoutTools(t *testing.T) {

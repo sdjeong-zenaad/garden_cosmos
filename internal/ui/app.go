@@ -16,6 +16,7 @@ import (
 )
 
 type UI struct {
+	screen               *appScreen
 	calculatorPage       tview.Primitive
 	terminalMode         bool
 	session              *garden.Session
@@ -57,6 +58,12 @@ func Run(dir string, session *garden.Session, mouse bool) error {
 }
 func (u *UI) installInput() {
 	u.app.SetInputCapture(func(e *tcell.EventKey) *tcell.EventKey {
+		if u.screen != nil && u.screen.localControlInput(e) {
+			return nil
+		}
+		if u.moveButtonFocus(e.Key()) {
+			return nil
+		}
 		if e.Key() == tcell.KeyF3 || e.Key() == tcell.KeyF4 {
 			u.setTerminalMode(e.Key() == tcell.KeyF4)
 			return nil

@@ -234,32 +234,3 @@ func (u *UI) hasClipboard() bool {
 	_, err := garden.DetectClipboard()
 	return err == nil
 }
-
-// Restore the target before invoking a button action: clicking a tview button
-// moves focus to the button, while copy/paste must operate on the previous field.
-func (u *UI) clipboardButtons() tview.Primitive {
-	row := tview.NewFlex()
-	for _, spec := range []struct {
-		label string
-		key   tcell.Key
-	}{{"복사", tcell.KeyCtrlY}, {"붙여넣기", tcell.KeyCtrlV}} {
-		key := spec.key
-		var origin tview.Primitive
-		button := tview.NewButton(spec.label)
-		button.SetMouseCapture(func(a tview.MouseAction, e *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
-			if a == tview.MouseLeftDown {
-				origin = u.modeFocus()
-			}
-			return a, e
-		})
-		button.SetSelectedFunc(func() {
-			if origin != nil {
-				u.app.SetFocus(origin)
-			}
-			u.clipboardAction(key)
-		})
-		styleButton(button)
-		row.AddItem(button, 14, 0, false).AddItem(nil, 1, 0, false)
-	}
-	return row
-}
