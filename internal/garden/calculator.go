@@ -202,24 +202,20 @@ func FormatRat(r *big.Rat) string {
 		return r.Num().String()
 	}
 	denominator := new(big.Int).Set(r.Denom())
-	two, five := big.NewInt(2), big.NewInt(5)
-	rem := new(big.Int)
-	digits := 0
-	for _, factor := range []*big.Int{two, five} {
-		n := 0
-		for {
-			q := new(big.Int)
-			q.QuoRem(denominator, factor, rem)
-			if rem.Sign() != 0 {
-				break
-			}
-			denominator = q
-			n++
+	// Powers of two are available directly; reuse division buffers for fives.
+	twos := denominator.TrailingZeroBits()
+	denominator.Rsh(denominator, twos)
+	five, quotient, remainder := big.NewInt(5), new(big.Int), new(big.Int)
+	fives := 0
+	for {
+		quotient.QuoRem(denominator, five, remainder)
+		if remainder.Sign() != 0 {
+			break
 		}
-		if n > digits {
-			digits = n
-		}
+		denominator, quotient = quotient, denominator
+		fives++
 	}
+	digits := max(int(twos), fives)
 	if denominator.Cmp(big.NewInt(1)) != 0 {
 		return r.RatString() + "  (≈ " + r.FloatString(18) + ")"
 	}

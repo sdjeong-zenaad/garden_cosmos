@@ -3,6 +3,8 @@ package ui
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -60,10 +62,11 @@ func (u *UI) openResultQuery() {
 	}
 	view := &queryView{tview.NewTextView().SetDynamicColors(true).SetWrap(true).SetScrollable(true)}
 	view.SetBorder(true).SetTitle(title)
-	view.SetText(colorOutput(raw))
+	colored := colorOutput(raw)
+	view.SetText(colored)
 	result := &queryView{tview.NewTextView().SetDynamicColors(true).SetWrap(true).SetScrollable(true)}
 	result.SetBorder(true).SetTitle(" 쿼리 결과 ")
-	result.SetText(colorOutput(raw))
+	result.SetText(colored)
 	query := tview.NewInputField().SetLabel(label).SetText(initial)
 	status := tview.NewTextView()
 	page := tview.NewFlex().SetDirection(tview.FlexRow)
@@ -157,4 +160,19 @@ func (u *UI) querySource() string {
 		return garden.Clean(u.raw)
 	}
 	return garden.Clean(strings.TrimRight(u.raw, "\n") + "\n" + u.rawErr)
+}
+
+func (u *UI) resultQuery() {
+	if u.busy {
+		return
+	}
+	tool, pkg := "rg", "ripgrep"
+	if json.Valid([]byte(u.querySource())) {
+		tool, pkg = "jq", "jq"
+	}
+	if _, e := exec.LookPath(tool); e != nil {
+		u.alert(fmt.Sprintf("%s가 없습니다. 터미널에서 sudo apt install %s 실행 후 다시 시도하세요.", tool, pkg))
+		return
+	}
+	u.openResultQuery()
 }

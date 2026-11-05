@@ -84,14 +84,27 @@ func Analyze(ctx context.Context, binary, home string, progress func(string)) (*
 	if e != nil {
 		return nil, e
 	}
-	ver, e := Probe(ctx, p, "version")
-	if e != nil {
-		ver, e = Probe(ctx, p, "--version")
+	version, err := probeVersion(ctx, p)
+	if err != nil {
+		return nil, err
 	}
-	if e != nil {
-		return nil, fmt.Errorf("version: %w", e)
+	return analyzeBinary(ctx, p, hash, version, home, progress)
+}
+
+func probeVersion(ctx context.Context, binary string) (string, error) {
+	version, err := Probe(ctx, binary, "version")
+	if err != nil {
+		version, err = Probe(ctx, binary, "--version")
 	}
-	d := &Descriptor{Schema: Schema, Binary: p, Fingerprint: hash, Version: strings.TrimSpace(ver), Home: home, RequestedHome: home, AnalyzedAt: time.Now()}
+	if err != nil {
+		return "", fmt.Errorf("version: %w", err)
+	}
+	return strings.TrimSpace(version), nil
+}
+
+// Refresh already verified the binary; reuse that identity on a cache miss.
+func analyzeBinary(ctx context.Context, p, hash, version, home string, progress func(string)) (*Descriptor, error) {
+	d := &Descriptor{Schema: Schema, Binary: p, Fingerprint: hash, Version: version, Home: home, RequestedHome: home, AnalyzedAt: time.Now()}
 	count := 0
 	var walk func([]string, int) (*Command, error)
 	walk = func(path []string, depth int) (*Command, error) {
@@ -128,7 +141,8 @@ func Analyze(ctx context.Context, binary, home string, progress func(string)) (*
 		}
 		return c, nil
 	}
-	d.Root, e = walk(nil, 0)
+	root, e := walk(nil, 0)
+	d.Root = root
 	if e != nil {
 		return nil, e
 	}
@@ -149,18 +163,15 @@ func Refresh(ctx context.Context, dir string, p Profile, force bool, progress fu
 	}
 	var d Descriptor
 	e = Load(filepath.Join(dir, "descriptor.json"), &d)
-	ver, ve := Probe(ctx, binary, "version")
-	if ve != nil {
-		ver, ve = Probe(ctx, binary, "--version")
+	version, err := probeVersion(ctx, binary)
+	if err != nil {
+		return nil, err
 	}
-	if ve != nil {
-		return nil, ve
-	}
-	if !force && e == nil && d.Root != nil && d.Schema == Schema && d.Binary == binary && d.Fingerprint == hash && d.Version == strings.TrimSpace(ver) && p.Home == d.RequestedHome {
+	if !force && e == nil && d.Root != nil && d.Schema == Schema && d.Binary == binary && d.Fingerprint == hash && d.Version == version && p.Home == d.RequestedHome {
 		d.Configs = ReadConfigs(d.Home)
 		return &d, nil
 	}
-	fresh, e := Analyze(ctx, binary, p.Home, progress)
+	fresh, e := analyzeBinary(ctx, binary, hash, version, p.Home, progress)
 	if e != nil {
 		return nil, e
 	}
@@ -211,10 +222,20 @@ func ReadConfigs(home string) []Config {
 	}
 	return configs
 }
-func Flatten(c *Command) []*Command {
-	out := []*Command{c}
-	for _, child := range c.Children {
-		out = append(out, Flatten(child)...)
+
+// Flatten preserves descriptor order with one growing slice for the whole tree.
+func Flatten(root *Command) []*Command {
+	var commands []*Command
+	var walk func(*Command)
+	walk = func(command *Command) {
+		if command == nil {
+			return
+		}
+		commands = append(commands, command)
+		for _, child := range command.Children {
+			walk(child)
+		}
 	}
-	return out
+	walk(root)
+	return commands
 }

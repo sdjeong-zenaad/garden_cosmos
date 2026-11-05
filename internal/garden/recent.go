@@ -146,3 +146,20 @@ func (s *Store) Suggestions(f Field, query string) []Entry {
 	}
 	return out
 }
+
+func (s *Store) Put(value, kind, nickname, note string) {
+	for i := range s.Entries {
+		if s.Entries[i].Value == value {
+			s.Entries[i].LastSeen = time.Now()
+			if nickname != "" {
+				s.Entries[i].Nickname = nickname
+			}
+			if note != "" {
+				s.Entries[i].Note = note
+			}
+			return
+		}
+	}
+	s.Entries = append(s.Entries, Entry{Value: value, Kind: kind, Nickname: nickname, Note: note, LastSeen: time.Now()})
+	s.pruneRecent()
+}
