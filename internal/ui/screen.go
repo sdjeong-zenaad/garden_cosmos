@@ -37,6 +37,7 @@ func (s *appScreen) Draw(screen tcell.Screen) {
 	s.clipboardAvailable = s.ui.hasClipboard()
 	s.decorateLocalControls(page)
 	s.Flex.Draw(screen)
+	s.drawMainScrollbars(screen)
 	visitWidgets(page, func(p tview.Primitive) {
 		if drop, ok := p.(*tview.DropDown); ok && drop.HasFocus() && drop.IsOpen() {
 			drawComboOverlay(screen, drop)

@@ -18,25 +18,8 @@ type queryView struct{ *tview.TextView }
 
 func (v *queryView) Draw(s tcell.Screen) {
 	v.TextView.Draw(s)
-	x, y, w, h := v.GetInnerRect()
-	if w <= 0 || h <= 0 {
-		return
-	}
-	total := max(1, v.GetWrappedLineCount())
 	row, _ := v.GetScrollOffset()
-	thumb := min(h, max(1, h*h/total))
-	top := 0
-	if total > h {
-		top = min(h-thumb, max(0, row)*(h-thumb)/(total-h))
-	}
-	style := tcell.StyleDefault.Foreground(tcell.ColorTurquoise).Background(tview.Styles.PrimitiveBackgroundColor)
-	for i := 0; i < h; i++ {
-		ch := '░'
-		if i >= top && i < top+thumb {
-			ch = '█'
-		}
-		s.SetContent(x+w, y+i, ch, nil, style)
-	}
+	drawScrollbar(s, v.Box, v.GetWrappedLineCount(), row)
 }
 func (v *queryView) MouseHandler() func(tview.MouseAction, *tcell.EventMouse, func(tview.Primitive)) (bool, tview.Primitive) {
 	return v.WrapMouseHandler(func(a tview.MouseAction, e *tcell.EventMouse, focus func(tview.Primitive)) (bool, tview.Primitive) {

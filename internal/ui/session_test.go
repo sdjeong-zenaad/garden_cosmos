@@ -16,6 +16,7 @@ func TestCapturedExecutionsCount(t *testing.T) {
 	screen := tcell.NewSimulationScreen("UTF-8")
 	u.app.SetScreen(screen).SetRoot(u.pages, true)
 	stage := 0
+	focusCorrect := true
 	u.app.SetAfterDrawFunc(func(tcell.Screen) {
 		switch {
 		case stage == 0:
@@ -23,10 +24,16 @@ func TestCapturedExecutionsCount(t *testing.T) {
 			go u.app.QueueUpdate(func() { u.execute("/bin/true", nil, []string{"query"}) })
 		case stage == 1 && u.session.Total == 1:
 			stage++
-			go u.app.QueueUpdate(func() { u.execute("/bin/false", nil, []string{"tx"}) })
+			go u.app.QueueUpdate(func() {
+				focusCorrect = focusCorrect && u.app.GetFocus() == u.search
+				u.execute("/bin/false", nil, []string{"tx"})
+			})
 		case stage == 2 && u.session.Total == 2:
 			stage++
-			go u.app.QueueUpdate(func() { u.app.Stop() })
+			go u.app.QueueUpdate(func() {
+				focusCorrect = focusCorrect && u.app.GetFocus() == u.search
+				u.app.Stop()
+			})
 		}
 	})
 	done := make(chan error, 1)
@@ -39,6 +46,9 @@ func TestCapturedExecutionsCount(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("execution did not finish")
 	}
+	if !focusCorrect {
+		t.Fatal("execution did not return focus to command search")
+	}
 	if u.session.Total != 2 || u.session.ExitZero != 1 || u.session.Failed != 1 {
 		t.Fatal(u.session)
 	}
@@ -50,7 +60,7 @@ func TestInteractiveResultIntegration(t *testing.T) {
 	u.session = &garden.Session{}
 	r := garden.Result{Stdout: `{"height":42}`, ExitCode: 0, Started: true, Duration: time.Second}
 	u.finishInteractive("/bin/echo", []string{"query"}, r)
-	if u.raw != r.Stdout || !strings.Contains(u.displayOutput, `"height"`) || u.app.GetFocus() != u.output {
+	if u.raw != r.Stdout || !strings.Contains(u.displayOutput, `"height"`) || u.app.GetFocus() != u.search {
 		t.Fatal("interactive result missing")
 	}
 	if u.session.Total != 1 || u.session.ExitZero != 1 {

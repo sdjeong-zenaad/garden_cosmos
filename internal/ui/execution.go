@@ -83,7 +83,7 @@ func (u *UI) execute(binary string, args, path []string) {
 				u.app.Stop()
 				return
 			}
-			u.app.SetFocus(u.output)
+			u.app.SetFocus(u.search)
 		})
 	}()
 }
@@ -142,7 +142,7 @@ func (u *UI) finishInteractive(binary string, path []string, r garden.Result) {
 		message += " · " + r.Err.Error()
 	}
 	u.message(message)
-	u.app.SetFocus(u.output)
+	u.app.SetFocus(u.search)
 }
 
 func (u *UI) bat() {

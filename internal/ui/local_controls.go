@@ -47,6 +47,9 @@ func (s *appScreen) drawControl(screen tcell.Screen, x, y, width int, label stri
 
 func (s *appScreen) MouseHandler() func(tview.MouseAction, *tcell.EventMouse, func(tview.Primitive)) (bool, tview.Primitive) {
 	return func(a tview.MouseAction, e *tcell.EventMouse, focus func(tview.Primitive)) (bool, tview.Primitive) {
+		if s.mainScrollbarMouse(a, e, focus) {
+			return true, nil
+		}
 		_, page := s.ui.pages.GetFrontPage()
 		x, y := e.Position()
 		for i := len(s.controls) - 1; i >= 0; i-- {
@@ -169,12 +172,24 @@ func (s *appScreen) decorateLocalControls(page tview.Primitive) {
 }
 
 func (s *appScreen) decoratePane(box *tview.Box, target tview.Primitive, text func() string) {
+	// tview clamps offsets after parsing. A negative page offset can stop
+	// parsing before the viewport is populated, especially after reindexing.
+	if view, ok := target.(interface {
+		GetScrollOffset() (int, int)
+		ScrollTo(int, int) *tview.TextView
+	}); ok {
+		row, column := view.GetScrollOffset()
+		if row < 0 {
+			view.ScrollTo(0, column)
+		}
+	}
 	bg := tview.Styles.PrimitiveBackgroundColor
 	if target.HasFocus() {
 		bg = focusedPaneBackground
 	}
 	// TextView also keeps a text background; use its override, not Box alone.
-	if pane, ok := target.(interface{ SetBackgroundColor(tcell.Color) *tview.Box }); ok {
+	// TextView resets its line index even when setting the same color.
+	if pane, ok := target.(interface{ SetBackgroundColor(tcell.Color) *tview.Box }); ok && box.GetBackgroundColor() != bg {
 		pane.SetBackgroundColor(bg)
 	}
 	box.SetTitleAlign(tview.AlignLeft)
