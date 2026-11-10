@@ -16,7 +16,6 @@ make install PREFIX=/경로    # /경로/bin/gcosm에 설치
 ```
 
 `~/go/bin`이 PATH에 없다면 셸 설정에 `export PATH="$HOME/go/bin:$PATH"`를 추가하세요.
-로고는 실행 파일에 내장되어 별도 파일이 필요 없습니다.
 
 Go 실행 파일이나 툴체인 버전을 지정할 수 있습니다.
 
@@ -40,8 +39,8 @@ sudo apt install jq bat ripgrep util-linux
 
 ```sh
 gcosm --cli "$(which cosmd)"   # 첫 실행: CLI 선택 (cosmd 대신 원하는 실행 이름을 넣어서 실행)
-gcosm                               # 마지막 CLI 설정으로 실행
-gcosm --analyze --refresh           # CLI의 도움말 재분석 후 종료
+gcosm                          # 마지막 CLI 설정으로 실행
+gcosm --analyze --refresh      # CLI의 도움말 재분석 후 종료
 ```
 
 - `--cli PATH`: 사용할 Cosmos CLI 경로.
