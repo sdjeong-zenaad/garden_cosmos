@@ -9,7 +9,7 @@ import (
 )
 
 func TestRefreshClearedHomeAndOldSchema(t *testing.T) {
-	for _, schema := range []int{1, Schema} {
+	for _, schema := range []int{1, 2, Schema} {
 		dir := t.TempDir()
 		binary := filepath.Join(dir, "mock")
 		if err := os.WriteFile(binary, []byte("#!/bin/sh\nif [ \"$1\" = version ]; then echo v1; else printf 'App\\nUsage:\\n  mock [flags]\\nFlags:\\n      --home string   home (default \"/default\")\\n'; fi\n"), 0700); err != nil {

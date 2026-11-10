@@ -53,6 +53,7 @@ func ParseHelp(path []string, help string) *Command {
 			}
 		}
 	}
+	c.Interaction = AnalyzeInteraction(c)
 	return c
 }
 func Identity(binary string) (string, string, error) {

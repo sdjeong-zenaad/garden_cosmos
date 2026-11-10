@@ -13,6 +13,9 @@ import (
 )
 
 type commandEditor struct {
+	executionMode     string
+	interactionHint   *tview.TextView
+	modeSelector      *tview.DropDown
 	preferenceKey     string
 	pendingCompletion *tview.InputField
 	autocomplete      map[*tview.InputField]func(string) []string
@@ -47,6 +50,13 @@ func (u *UI) commandForm() {
 		return
 	}
 	ed := &commandEditor{preferenceKey: u.preferenceKey(), command: u.selected, fields: garden.Fields(u.selected), values: map[string]garden.FieldValue{}, form: tview.NewForm(), feedback: tview.NewTextView().SetDynamicColors(true)}
+	modeSelector, err := u.executionMode(ed)
+	if err != nil {
+		u.alert(err.Error())
+		return
+	}
+	ed.modeSelector = modeSelector
+	ed.interactionHint = tview.NewTextView().SetWrap(true)
 	ed.autocomplete = map[*tview.InputField]func(string) []string{}
 	u.editor = ed
 	detail := tview.NewTextView().SetWrap(true)
@@ -250,6 +260,10 @@ func (u *UI) commandForm() {
 		buttons.AddItem(&edgeButton{button}, 0, 1, i == 0)
 	}
 	usage := tview.NewTextView().SetText("사용법: " + ed.command.Usage)
+	header := tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(usage, 1, 0, false).
+		AddItem(modeSelector, 1, 0, false).
+		AddItem(ed.interactionHint, 2, 0, false)
 	copyButton := tview.NewButton("[복사]").SetSelectedFunc(copyCommand)
 	copyColumn := tview.NewFlex().SetDirection(tview.FlexRow).AddItem(copyButton, 1, 0, true).AddItem(nil, 0, 1, false)
 	previewRow := tview.NewFlex()
@@ -259,7 +273,7 @@ func (u *UI) commandForm() {
 	previewRow.AddItem(ed.preview, 0, 1, false)
 	pane := &fieldPane{Form: ed.form, focus: func(i int) { ed.form.SetFocus(i); u.app.SetFocus(ed.form) }}
 	page := tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(usage, 2, 0, false).
+		AddItem(header, 4, 0, false).
 		AddItem(previewRow, 3, 0, false).
 		AddItem(pane, 0, 1, true).
 		AddItem(detail, 3, 0, false).
@@ -273,7 +287,11 @@ func (u *UI) commandForm() {
 			return nil
 		case tcell.KeyF6:
 			if ed.form.HasFocus() {
-				u.app.SetFocus(actions[0])
+				index := 0
+				if ed.preferInteractive() {
+					index = 1
+				}
+				u.app.SetFocus(actions[index])
 			} else {
 				u.app.SetFocus(ed.form)
 			}
@@ -296,7 +314,7 @@ func (u *UI) commandForm() {
 	}
 	commandView := &commandPage{Flex: page, ui: u}
 	u.setFocusOrder(commandView, func() []tview.Primitive {
-		var order []tview.Primitive
+		order := []tview.Primitive{modeSelector}
 		if u.hasClipboard() {
 			order = append(order, copyButton)
 		}
@@ -412,4 +430,5 @@ func (u *UI) updateCommandPreview() {
 		binary = filepath.Base(binary)
 	}
 	ed.preview.SetText(garden.Preview(binary, args))
+	ed.updateInteraction()
 }

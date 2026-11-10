@@ -41,3 +41,20 @@ go test ./internal/garden -run '^$' -bench 'Benchmark(FormatRat|Flatten)$' -benc
 ```
 
 테스트는 임시 데이터 폴더와 모의 CLI·터미널을 사용한다. 실제 체인 전송이나 데스크톱/SSH 터미널의 시각적 확인을 대신하지 않는다. 성능 수치는 같은 Go 버전과 장비에서 비교한다.
+
+## 실행 방식 안내
+
+명령 입력폼 상단에 자동 판단과 그 근거를 표시한다. `기본 실행 (F6)`에서
+`자동 판단`, `일반 실행`, `대화형 실행`을 선택할 수 있다. 입력폼에서 F6을
+누르면 판단에 맞는 하단 실행 버튼으로 이동한다. F7과 F8은 각각 일반 실행과
+대화형 실행으로 유지되며, 자동으로 실행하거나 서로 전환하지 않는다.
+
+- `internal/garden/interaction.go`: 알려진 명령, 도움말의 본문, 활성 플래그를
+  이용한 권장 판정. `--yes`는 키링 암호 입력까지 없애지 않는다.
+- descriptor 스키마 3의 `interaction`에는 `level`, `reasons`, `source`를 저장한다.
+  기존 descriptor는 다시 분석한다. 분석은 버전·도움말만 실행한다.
+- `internal/ui/interaction.go`: 실행폼의 플래그 변경에 따른 안내와 사용자 선택 저장.
+  `execution-modes.json`은 CLI 경로·home·명령별로 선택을 기억하며 재분석 후에도 유지한다.
+  `자동 판단`을 선택하면 해당 명령의 수동 지정을 제거한다.
+- `recommended`, `conditional`, `normal`, `unknown`은 권장 등급이며 입력 필요 여부의
+  확정값이 아니다. 새 CLI나 플러그인 명령은 미확인으로 남을 수 있다.

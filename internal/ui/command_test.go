@@ -334,7 +334,7 @@ func TestCheckboxNavigationAndFormLayout(t *testing.T) {
 	}
 	_, p := u.pages.GetFrontPage()
 	page := p.(*commandPage)
-	if !strings.HasPrefix(page.GetItem(0).(*tview.TextView).GetText(false), "사용법: ") {
+	if !strings.HasPrefix(page.GetItem(0).(*tview.Flex).GetItem(0).(*tview.TextView).GetText(false), "사용법: ") {
 		t.Fatal("usage label missing")
 	}
 	buttons := page.GetItem(page.GetItemCount() - 1).(*tview.Flex)
@@ -455,7 +455,7 @@ func TestCommandPageTabIncludesButtons(t *testing.T) {
 	trace := unwrapFormItem(u.editor.form.GetFormItem(4)).(*fieldRow)
 	label.check.SetChecked(true)
 	output.check.SetChecked(true)
-	order := []tview.Primitive{copyButton, first, label.check, label.FormItem, chain.check, output.check, output.FormItem, trace.check, buttons.GetItem(0).(*edgeButton).Button, buttons.GetItem(2).(*edgeButton).Button, buttons.GetItem(4).(*edgeButton).Button}
+	order := []tview.Primitive{u.editor.modeSelector, copyButton, first, label.check, label.FormItem, chain.check, output.check, output.FormItem, trace.check, buttons.GetItem(0).(*edgeButton).Button, buttons.GetItem(2).(*edgeButton).Button, buttons.GetItem(4).(*edgeButton).Button}
 	root.Draw(s)
 	var expanded []tview.Primitive
 	for _, p := range order {
@@ -468,7 +468,7 @@ func TestCommandPageTabIncludesButtons(t *testing.T) {
 	}
 	order = expanded
 	for _, key := range []tcell.Key{tcell.KeyTab, tcell.KeyBacktab} {
-		u.app.SetFocus(copyButton)
+		u.app.SetFocus(order[0])
 		for step := 1; step <= len(order); step++ {
 			root.InputHandler()(tcell.NewEventKey(key, 0, tcell.ModNone), func(p tview.Primitive) { u.app.SetFocus(p) })
 			root.Draw(s)

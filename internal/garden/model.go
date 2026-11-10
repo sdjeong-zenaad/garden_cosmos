@@ -4,7 +4,7 @@ import (
 	"time"
 )
 
-const Schema = 2
+const Schema = 3
 
 type Flag struct {
 	Name, Short, Type, Default, Description string
@@ -15,6 +15,7 @@ type Command struct {
 	Summary, Usage, Help string
 	Flags                []Flag
 	Children             []*Command
+	Interaction          Interaction `json:"interaction"`
 }
 type Config struct {
 	Path   string
